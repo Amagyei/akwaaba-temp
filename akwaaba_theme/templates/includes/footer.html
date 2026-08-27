@@ -1,0 +1,52 @@
+{% set footer = frappe.get_hooks('akwaaba_footer_context') %}
+
+<footer class="akwaaba-footer">
+	<div class="akwaaba-footer__grid">
+		<div>
+			<div class="akwaaba-footer__brand">Serwa Kollections</div>
+			<div class="akwaaba-footer__tag">Medaase — thank you for being here.</div>
+			<div class="akwaaba-footer__desc">
+				A house of Ghana-made pieces. Handwoven Kente,
+				Adinkra prints, northern Fugu, Kaba &amp; Slit,
+				and modern Ankara — with proverbs sewn in.
+			</div>
+		</div>
+
+		<div>
+			<h5>Shop</h5>
+			<ul>
+				<li><a href="/kente-collection">Kente Collection</a></li>
+				<li><a href="/adinkra-tees">Adinkra Tees</a></li>
+				<li><a href="/fugu-smock">Fugu &amp; Smock</a></li>
+				<li><a href="/ankara-wear">Ankara Wear</a></li>
+				<li><a href="/kaba-slit">Kaba &amp; Slit</a></li>
+				<li><a href="/accessories">Accessories</a></li>
+			</ul>
+		</div>
+
+		<div>
+			<h5>House</h5>
+			<ul>
+				<li><a href="/story">Our Story</a></li>
+				<li><a href="/weavers">The Weavers</a></li>
+				<li><a href="/adinkra-guide">Adinkra Guide</a></li>
+				<li><a href="/press">Press</a></li>
+			</ul>
+		</div>
+
+		<div>
+			<h5>Care</h5>
+			<ul>
+				<li><a href="/shipping">Shipping</a></li>
+				<li><a href="/returns">Returns</a></li>
+				<li><a href="/size-guide">Size Guide</a></li>
+				<li><a href="/contact">Contact</a></li>
+			</ul>
+		</div>
+	</div>
+
+	<div class="akwaaba-footer__bottom">
+		<div>© {{ frappe.utils.today()[:4] }} Serwa Kollections. Woven in Accra.</div>
+		<div><span class="twi">Yɛnna dɔ</span> — Made with love.</div>
+	</div>
+</footer>

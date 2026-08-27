@@ -1,0 +1,165 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/akwaaba/footer.html" import akwaaba_footer %}
+
+{% block title %}Cart — Serwa Kollections{% endblock %}
+
+{% block head_include %}
+	<meta name="description" content="Your Serwa Kollections cart — review your pieces and place an order.">
+	<meta name="theme-color" content="#0F0F0F">
+	<meta name="robots" content="noindex,nofollow">
+{% endblock %}
+
+{% block page_content %}
+
+<div class="kente-strip -thin"></div>
+
+<header class="akw-cart__header">
+	<div class="akw-cart__eyebrow">Your Bag</div>
+	<h1 class="akw-cart__title">Cart</h1>
+	<p class="akw-cart__subtitle">
+		<span class="akw-cart__item-count">{{ item_count }}</span>
+		{{ 'piece' if item_count == 1 else 'pieces' }}
+		{%- if not is_empty %} · review and place your order{% endif -%}
+	</p>
+</header>
+
+{% if is_empty %}
+<section class="akw-cart__empty">
+	<div class="akw-cart__empty-title">Nothing here yet.</div>
+	<p class="akw-cart__empty-sub">Every good story starts somewhere.</p>
+	<a href="/shop" class="akw-cart__empty-link">Explore the collections →</a>
+</section>
+{% else %}
+
+<section class="akw-cart__layout">
+
+	<!-- LINE ITEMS -->
+	<div class="akw-cart__lines">
+		{%- for line in lines -%}
+		<article class="akw-cart-line"
+			data-item-code="{{ line.item_code }}"
+			data-unit-price="{{ line.unit_price }}">
+			<a href="/{{ line.route }}" class="akw-cart-line__media">
+				{% if line.image %}
+					<img src="{{ line.image }}" alt="{{ line.title }}" loading="lazy">
+				{% else %}
+					<div class="akw-cart-line__no-image">{{ line.item_code[:2] | upper }}</div>
+				{% endif %}
+			</a>
+			<div class="akw-cart-line__body">
+				<a href="/{{ line.route }}" class="akw-cart-line__title-link">
+					<div class="akw-cart-line__title">{{ line.title }}</div>
+				</a>
+				{% if line.variant_label %}
+					<div class="akw-cart-line__variant">{{ line.variant_label }}</div>
+				{% endif %}
+				<div class="akw-cart-line__group">{{ line.item_group }}</div>
+				<div class="akw-cart-line__unit">
+					{{ currency }} {{ '{:,.0f}'.format(line.unit_price) }} <span class="akw-cart-line__unit-hint">each</span>
+				</div>
+
+				<div class="akw-cart-line__controls">
+					<div class="akw-cart-line__stepper" role="group" aria-label="Quantity">
+						<button type="button" class="akw-cart-line__step" data-step="down" aria-label="Decrease">−</button>
+						<span class="akw-cart-line__qty" aria-live="polite">{{ line.qty }}</span>
+						<button type="button" class="akw-cart-line__step" data-step="up" aria-label="Increase">+</button>
+					</div>
+					<button type="button" class="akw-cart-line__remove">Remove</button>
+				</div>
+			</div>
+			<div class="akw-cart-line__subtotal">
+				<div class="akw-cart-line__subtotal-label">Subtotal</div>
+				<div class="akw-cart-line__subtotal-value">
+					<span class="akw-cart-line__subtotal-ccy">{{ currency }}</span>
+					<span class="akw-cart-line__subtotal-amount">{{ '{:,.0f}'.format(line.subtotal) }}</span>
+				</div>
+			</div>
+		</article>
+		{%- endfor -%}
+	</div>
+
+	<!-- CHECKOUT FORM -->
+	<aside class="akw-cart__aside">
+		<div class="akw-cart__summary">
+			<div class="akw-cart__grand-total">
+				<span>Total</span>
+				<span>
+					<span class="akw-card__ccy">{{ currency }}</span>
+					<span class="akw-cart__grand-amount">{{ '{:,.0f}'.format(subtotal) }}</span>
+				</span>
+			</div>
+			<p class="akw-cart__note">
+				<span class="twi">Medaase.</span> Shipping and any additional
+				charges will be confirmed with you by our team over WhatsApp
+				after you place the order.
+			</p>
+		</div>
+
+		<form class="akw-cart__form" novalidate>
+			<div class="akw-cart__form-title">Delivery Details</div>
+
+			<label class="akw-cart__field">
+				<span>Full Name<em>*</em></span>
+				<input type="text" name="full_name" required autocomplete="name">
+			</label>
+
+			<label class="akw-cart__field">
+				<span>Phone (WhatsApp)<em>*</em></span>
+				<input type="tel" name="phone" required autocomplete="tel" placeholder="+233 …">
+			</label>
+
+			<label class="akw-cart__field">
+				<span>Email</span>
+				<input type="email" name="email" required autocomplete="email"
+					placeholder="you@example.com">
+			</label>
+
+			<label class="akw-cart__field">
+				<span>Delivery Address<em>*</em></span>
+				<textarea name="address_line" required rows="2" autocomplete="street-address"
+					placeholder="House / street / landmark"></textarea>
+			</label>
+
+			<div class="akw-cart__field-row">
+				<label class="akw-cart__field">
+					<span>City / Town<em>*</em></span>
+					<input type="text" name="city" required autocomplete="address-level2">
+				</label>
+				<label class="akw-cart__field">
+					<span>Region</span>
+					<input type="text" name="region" autocomplete="address-level1"
+						placeholder="Greater Accra">
+				</label>
+			</div>
+
+			<label class="akw-cart__field">
+				<span>Notes for the tailor <em>(optional)</em></span>
+				<textarea name="notes" rows="2"
+					placeholder="Sizing preferences, gift wrap, or a nickname to sew in."></textarea>
+			</label>
+
+			<p class="akw-cart__disclaimer">
+				By placing your order you agree to be contacted by our team
+				via WhatsApp to confirm details, arrange payment (Momo, bank
+				transfer, or cash on delivery), and coordinate delivery.
+			</p>
+
+			<button type="submit" class="akw-cart__submit">
+				<span class="akw-cart__submit-text">Place order</span>
+				<span class="akw-cart__submit-loading" aria-hidden="true">Placing…</span>
+			</button>
+			<div class="akw-cart__error" role="alert" hidden></div>
+		</form>
+	</aside>
+
+</section>
+
+{% endif %}
+
+<div class="kente-strip -thin"></div>
+
+{{ akwaaba_footer(akw_nav_collections) }}
+
+{% endblock %}
+
+{% block footer %}{% endblock %}

@@ -1,0 +1,243 @@
+{
+ "actions": [],
+ "creation": "2026-07-16 23:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "provider_section",
+  "environment",
+  "enabled",
+  "column_break_provider",
+  "brand_label",
+  "keys_section",
+  "public_key",
+  "column_break_keys",
+  "secret_key",
+  "webhook_section",
+  "webhook_secret",
+  "webhook_url_help",
+  "accounting_section",
+  "company",
+  "auto_complete_accounting",
+  "column_break_accounts",
+  "momo_account",
+  "card_account",
+  "modes_section",
+  "momo_mode_of_payment",
+  "column_break_modes",
+  "card_mode_of_payment",
+  "direct_momo_section",
+  "direct_momo_enabled",
+  "momo_network",
+  "momo_number",
+  "momo_account_name",
+  "column_break_direct_momo",
+  "admin_notify_phone",
+  "sms_inbox_secret",
+  "momo_instructions"
+ ],
+ "fields": [
+  {
+   "fieldname": "provider_section",
+   "fieldtype": "Section Break",
+   "label": "Provider"
+  },
+  {
+   "default": "Test",
+   "fieldname": "environment",
+   "fieldtype": "Select",
+   "label": "Environment",
+   "options": "Test\nLive",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable Paystack Payments"
+  },
+  {
+   "fieldname": "column_break_provider",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "MoMo / Card",
+   "description": "Shown on the Pay Now button on the order page.",
+   "fieldname": "brand_label",
+   "fieldtype": "Data",
+   "label": "Button Label"
+  },
+  {
+   "fieldname": "keys_section",
+   "fieldtype": "Section Break",
+   "label": "API Keys"
+  },
+  {
+   "description": "Starts with pk_test_ or pk_live_.",
+   "fieldname": "public_key",
+   "fieldtype": "Data",
+   "label": "Public Key"
+  },
+  {
+   "fieldname": "column_break_keys",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Starts with sk_test_ or sk_live_. Never expose to the frontend.",
+   "fieldname": "secret_key",
+   "fieldtype": "Password",
+   "label": "Secret Key"
+  },
+  {
+   "fieldname": "webhook_section",
+   "fieldtype": "Section Break",
+   "label": "Webhook"
+  },
+  {
+   "description": "The X-Paystack-Signature header is an HMAC-SHA512 of the request body using your secret key. This field is here in case Paystack ever separates the webhook secret from the API secret. Leave blank to reuse Secret Key.",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret (optional)"
+  },
+  {
+   "fieldname": "webhook_url_help",
+   "fieldtype": "HTML",
+   "label": "Webhook URL Help",
+   "options": "<div class=\"text-muted small\">Paste this URL into your Paystack Dashboard → Settings → Webhooks:<br><code>https://your-domain/api/method/akwaaba_theme.api.paystack_webhook</code></div>"
+  },
+  {
+   "fieldname": "accounting_section",
+   "fieldtype": "Section Break",
+   "label": "Accounting"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "description": "The company under which Sales Orders / Sales Invoices / Payment Entries are created."
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_complete_accounting",
+   "fieldtype": "Check",
+   "label": "Auto-complete accounting on payment",
+   "description": "On a confirmed Paystack payment, submit Sales Order, create + submit Sales Invoice, and create + submit Payment Entry using the accounts below. Uncheck to leave everything in Draft for manual review."
+  },
+  {
+   "fieldname": "column_break_accounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "momo_account",
+   "fieldtype": "Link",
+   "label": "MoMo Receiving Account",
+   "options": "Account",
+   "description": "Bank/Cash account credited when a MoMo payment (MTN/Vodafone/AirtelTigo) settles."
+  },
+  {
+   "fieldname": "card_account",
+   "fieldtype": "Link",
+   "label": "Card Receiving Account",
+   "options": "Account",
+   "description": "Bank/Cash account credited when a Card payment settles."
+  },
+  {
+   "fieldname": "modes_section",
+   "fieldtype": "Section Break",
+   "label": "Modes of Payment"
+  },
+  {
+   "fieldname": "momo_mode_of_payment",
+   "fieldtype": "Link",
+   "label": "MoMo Mode of Payment",
+   "options": "Mode of Payment"
+  },
+  {
+   "fieldname": "column_break_modes",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "card_mode_of_payment",
+   "fieldtype": "Link",
+   "label": "Card Mode of Payment",
+   "options": "Mode of Payment"
+  },
+  {
+   "fieldname": "direct_momo_section",
+   "fieldtype": "Section Break",
+   "label": "Direct MoMo (manual — no gateway)",
+   "description": "Let customers send MoMo straight to your number. Orders wait in 'Awaiting Confirmation' until you confirm the receipt on the Sales Order."
+  },
+  {
+   "default": "0",
+   "fieldname": "direct_momo_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Direct MoMo"
+  },
+  {
+   "fieldname": "momo_network",
+   "fieldtype": "Select",
+   "label": "MoMo Network",
+   "options": "MTN\nTelecel (Vodafone)\nAirtelTigo"
+  },
+  {
+   "fieldname": "momo_number",
+   "fieldtype": "Data",
+   "label": "MoMo Number",
+   "description": "The number customers send money to, e.g. 024XXXXXXX."
+  },
+  {
+   "fieldname": "momo_account_name",
+   "fieldtype": "Data",
+   "label": "MoMo Account Name",
+   "description": "The registered name shown when someone sends to this number."
+  },
+  {
+   "fieldname": "column_break_direct_momo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "admin_notify_phone",
+   "fieldtype": "Data",
+   "label": "Admin Alert WhatsApp",
+   "description": "Optional. WhatsApp number to ping when a payment needs confirming (best-effort; desk bell alert always fires)."
+  },
+  {
+   "fieldname": "sms_inbox_secret",
+   "fieldtype": "Password",
+   "label": "SMS Inbox Secret",
+   "description": "Optional. Shared secret for the momo_sms_inbox endpoint so an Android SMS-forwarder can auto-confirm receipts. Leave blank to keep it manual-only."
+  },
+  {
+   "fieldname": "momo_instructions",
+   "fieldtype": "Small Text",
+   "label": "Extra Instructions",
+   "description": "Optional extra line shown to customers on the pay screen."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-16 23:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Akwaaba Theme",
+ "name": "Akwaaba Payment Settings",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

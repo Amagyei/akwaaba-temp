@@ -1,0 +1,126 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/akwaaba/footer.html" import akwaaba_footer %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block head_include %}
+	<meta name="description" content="{{ meta_description }}">
+	<meta name="theme-color" content="#0F0F0F">
+	<link rel="stylesheet" href="/assets/akwaaba_theme/css/product.css">
+	<link rel="stylesheet" href="/assets/akwaaba_theme/css/fitting-studio.css">
+{% endblock %}
+
+{% block page_content %}
+<div class="kente-strip -thin"></div>
+
+<!-- Breadcrumb — themed, only ever points at /, /shop, /shop?category= -->
+<nav class="akw-crumbs" aria-label="breadcrumb">
+	{%- for c in crumbs -%}
+		{%- if c.route -%}
+			<a href="{{ c.route }}">{{ c.label }}</a><span class="akw-crumbs__sep">/</span>
+		{%- else -%}
+			<span class="akw-crumbs__current">{{ c.label }}</span>
+		{%- endif -%}
+	{%- endfor -%}
+</nav>
+
+<section class="akw-pdp"
+	data-item-code="{{ item.item_code }}"
+	data-has-variants="{{ 1 if (item.has_variants and variant_options) else 0 }}"
+	{% if preselect_size %}data-preselect="{{ preselect_size }}"{% endif %}>
+
+	<!-- GALLERY -->
+	<div class="akw-pdp__gallery">
+		{% if gallery %}
+			<div class="akw-pdp__hero">
+				<img id="akw-pdp-hero" src="{{ gallery[0] }}" alt="{{ product_title }}" loading="eager" decoding="async">
+				{% if item.on_backorder %}<span class="akw-pdp__flag">Backorder</span>{% endif %}
+			</div>
+			{% if gallery|length > 1 %}
+			<div class="akw-pdp__thumbs">
+				{% for g in gallery %}
+					<button type="button" class="akw-pdp__thumb{% if loop.first %} -active{% endif %}" data-src="{{ g }}" aria-label="View image {{ loop.index }}">
+						<img src="{{ g }}" alt="" loading="lazy" decoding="async">
+					</button>
+				{% endfor %}
+			</div>
+			{% endif %}
+		{% else %}
+			<div class="akw-pdp__hero akw-pdp__hero--empty">{{ item.item_code[:2] | upper }}</div>
+		{% endif %}
+	</div>
+
+	<!-- DETAILS -->
+	<div class="akw-pdp__details">
+		<div class="akw-pdp__eyebrow">{{ item.item_group }}</div>
+		<h1 class="akw-pdp__title">{{ product_title }}</h1>
+
+		<div class="akw-pdp__price">
+			{% if price_from %}<span class="akw-pdp__from">from</span>{% endif %}
+			<span class="akw-pdp__ccy">{{ currency }}</span>
+			<span class="akw-pdp__price-amount">{{ '{:,.0f}'.format(price or 0) }}</span>
+		</div>
+
+		{% if item.short_description %}
+			<p class="akw-pdp__lede">{{ item.short_description }}</p>
+		{% endif %}
+
+		{% if item.has_variants and variant_options %}
+		<div class="akw-pdp__sizes-block">
+			<div class="akw-pdp__sizes-label">Select size</div>
+			<div class="akw-pdp__sizes" role="group" aria-label="Select size">
+				{% for v in variant_options %}
+					<button type="button"
+						class="akw-pdp__size{% if v.oos %} -oos{% endif %}"
+						data-variant-code="{{ v.code }}"
+						data-size="{{ v.size }}"
+						data-price-display="{{ currency }} {{ '{:,.0f}'.format(v.price or 0) }}"
+						data-oos="{{ 1 if v.oos else 0 }}"
+						{% if v.oos %}aria-disabled="true" title="Out of stock"{% endif %}>
+						{{ v.size }}
+					</button>
+				{% endfor %}
+			</div>
+			<div class="akw-pdp__hint" hidden>Please select a size.</div>
+		</div>
+		{% endif %}
+
+		<button type="button" class="akw-pdp__add">Add to cart</button>
+
+		{% if description %}
+			<div class="akw-pdp__desc">{{ description | safe }}</div>
+		{% endif %}
+
+		{% if specs %}
+		<div class="akw-pdp__specs">
+			<div class="akw-pdp__specs-title">Details</div>
+			<dl>
+				{% for s in specs %}
+					<div class="akw-pdp__spec-row">
+						<dt>{{ s.label }}</dt>
+						<dd>{{ s.description }}</dd>
+					</div>
+				{% endfor %}
+			</dl>
+		</div>
+		{% endif %}
+	</div>
+</section>
+
+<!-- THE FITTING STUDIO (auto-mounts on the data attribute) -->
+{% if enable_fitting_studio %}
+<section class="akwfs-itemblock">
+	<div class="akwfs-itemblock-head">
+		<span class="akwfs-eyebrow">The Fitting Studio</span>
+		<h2>See it on your figure</h2>
+		<p>Adjust the dress form to your measurements and drape the kente before you buy.</p>
+	</div>
+	<div data-akw-fitting-studio></div>
+</section>
+{% endif %}
+
+<div class="kente-strip -thin"></div>
+{{ akwaaba_footer(akw_nav_collections) }}
+{% endblock %}
+
+{% block footer %}{% endblock %}

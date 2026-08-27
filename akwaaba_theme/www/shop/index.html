@@ -1,0 +1,87 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/akwaaba/product_card.html" import akw_card %}
+{% from "templates/includes/akwaaba/footer.html" import akwaaba_footer %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block head_include %}
+	<meta name="description" content="{{ meta_description }}">
+	<meta name="theme-color" content="#0F0F0F">
+{% endblock %}
+
+{% block page_content %}
+
+<div class="kente-strip -thin"></div>
+
+<!-- SHOP HEADER -->
+<header class="akw-shop__header">
+	<div class="akw-shop__eyebrow">The Collections</div>
+	<h1 class="akw-shop__title">{{ category_name }}</h1>
+	<p class="akw-shop__count">
+		{% if total %}
+			{{ total }} {{ 'piece' if total == 1 else 'pieces' }} · woven, printed &amp; tailored in Ghana
+		{% else %}
+			No pieces yet — <a href="/shop">shop all →</a>
+		{% endif %}
+	</p>
+</header>
+
+<!-- CATEGORY CHIPS (from Item Groups) -->
+<nav class="akw-shop__chips" aria-label="Collections">
+	<a class="akw-shop__chip {% if not category %}-active{% endif %}" href="/shop">All</a>
+	{%- for c in akw_all_collections -%}
+		{%- set slug = c.route or c.name -%}
+		<a class="akw-shop__chip {% if category == slug or category == c.name %}-active{% endif %}"
+			href="/shop?category={{ slug }}">{{ c.label }}</a>
+	{%- endfor -%}
+</nav>
+
+<!-- SORT BAR -->
+<div class="akw-shop__toolbar">
+	<div class="akw-shop__result">
+		Showing <strong>{{ items|length }}</strong> of {{ total }}
+	</div>
+	<form class="akw-shop__sort" method="get" action="/shop">
+		{% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+		<label for="akw-sort" class="akw-shop__sort-label">Sort</label>
+		<select id="akw-sort" name="sort" onchange="this.form.submit()">
+			<option value="newest"     {% if sort=='newest'     %}selected{% endif %}>Newest</option>
+			<option value="price_low"  {% if sort=='price_low'  %}selected{% endif %}>Price · Low to High</option>
+			<option value="price_high" {% if sort=='price_high' %}selected{% endif %}>Price · High to Low</option>
+			<option value="name"       {% if sort=='name'       %}selected{% endif %}>Name · A-Z</option>
+		</select>
+	</form>
+</div>
+
+<!-- PRODUCT GRID -->
+{% if items %}
+<section class="akw-shop__grid">
+	{%- for item in items -%}
+		{{ akw_card(item) }}
+	{%- endfor -%}
+</section>
+
+{% if has_next %}
+	<div class="akw-shop__more">
+		<a class="akw-shop__more-btn"
+			href="/shop?{% if category %}category={{ category }}&amp;{% endif %}sort={{ sort }}&amp;start={{ next_start }}">
+			Load more pieces
+		</a>
+		<div class="akw-shop__more-hint">Showing {{ start + items|length }} of {{ total }}</div>
+	</div>
+{% endif %}
+
+{% else %}
+<section class="akw-shop__empty">
+	<div class="akw-shop__empty-title">Nothing in this collection yet.</div>
+	<a href="/shop" class="akw-shop__empty-link">Browse all collections →</a>
+</section>
+{% endif %}
+
+<div class="kente-strip -thin"></div>
+
+{{ akwaaba_footer(akw_nav_collections) }}
+
+{% endblock %}
+
+{% block footer %}{% endblock %}

@@ -1,0 +1,227 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/akwaaba/footer.html" import akwaaba_footer %}
+
+{% block title %}Serwa Kollections — Woven Stories, Modern Silhouettes{% endblock %}
+
+{% block head_include %}
+	<meta name="description" content="Serwa Kollections — a Ghana-inspired clothing house. Handwoven Kente, Adinkra tees, Fugu smocks, Ankara wear, and modern Kaba & Slit for the diaspora and beyond.">
+	<meta name="theme-color" content="#0F0F0F">
+	<meta property="og:title" content="Serwa Kollections — Woven Stories, Modern Silhouettes">
+	<meta property="og:description" content="A house of Ghana-made pieces. Kente, Adinkra, Fugu, Ankara, Kaba & Slit — each garment carries a proverb.">
+	<meta property="og:type" content="website">
+	<meta name="twitter:card" content="summary_large_image">
+
+	<script type="application/ld+json">
+	{
+		"@context": "https://schema.org",
+		"@type": "ClothingStore",
+		"name": "Serwa Kollections",
+		"description": "Ghana-made clothing house. Handwoven Kente, Adinkra prints, Fugu smocks, Ankara wear, Kaba & Slit.",
+		"url": "{{ frappe.utils.get_url() }}",
+		"logo": "{{ frappe.utils.get_url() }}/assets/akwaaba_theme/images/logo.svg",
+		"sameAs": [],
+		"address": {
+			"@type": "PostalAddress",
+			"addressLocality": "Accra",
+			"addressCountry": "GH"
+		},
+		"priceRange": "GHS 180 - GHS 3200"
+	}
+	</script>
+{% endblock %}
+
+{% block page_content %}
+
+<div class="kente-strip"></div>
+
+<!-- HERO -->
+<section class="akwaaba-hero{% if hero_slides %} -has-media{% endif %}">
+	{%- if hero_slides -%}
+	<div class="akwaaba-hero__media">
+		{%- for s in hero_slides -%}
+		<a class="akwaaba-hero__slide{% if loop.first %} is-active{% endif %}"
+			href="{{ s.url }}"
+			style="background-image:url('{{ s.image }}')"
+			data-index="{{ loop.index0 }}"
+			aria-label="{{ s.title }}"
+			{% if loop.first %}aria-current="true"{% endif %}>
+			{%- if s.video -%}
+			<video class="akwaaba-hero__video"
+				muted loop playsinline webkit-playsinline
+				preload="none"
+				{% if s.poster %}poster="{{ s.poster }}"{% endif %}
+				data-src="{{ s.video }}"></video>
+			{%- endif -%}
+		</a>
+		{%- endfor -%}
+	</div>
+	<div class="akwaaba-hero__scrim" aria-hidden="true"></div>
+	{%- if hero_slides|length > 1 -%}
+	<div class="akwaaba-hero__nav" role="group" aria-label="Featured pieces">
+		<button type="button" class="akwaaba-hero__arrow -prev" aria-label="Previous piece">‹</button>
+		<div class="akwaaba-hero__dots">
+			{%- for s in hero_slides -%}
+			<button type="button"
+				class="akwaaba-hero__dot{% if loop.first %} is-active{% endif %}"
+				data-index="{{ loop.index0 }}"
+				aria-label="Show {{ s.title }}"></button>
+			{%- endfor -%}
+		</div>
+		<button type="button" class="akwaaba-hero__arrow -next" aria-label="Next piece">›</button>
+	</div>
+	{%- endif -%}
+	{%- endif -%}
+	<div class="akwaaba-hero__content">
+		<div class="akwaaba-hero__eyebrow">Akwaaba <span class="twi">— you are welcome</span></div>
+		<h1 class="akwaaba-hero__title">Woven Stories.<br><em>Modern Silhouettes.</em></h1>
+		<p class="akwaaba-hero__sub">
+			Ghana-made pieces — handwoven Kente from Bonwire,
+			Adinkra prints, northern Fugu, and modern Kaba &amp; Slit.
+			Each garment carries a proverb.
+		</p>
+		<div class="akwaaba-hero__ctas">
+			<a href="/shop" class="akwaaba-hero__cta">Shop the Collection</a>
+			{%- if collections -%}
+				{%- set featured = collections[0] -%}
+				<a href="{{ featured.url }}" class="akwaaba-hero__cta -outline">{{ featured.label }}</a>
+			{%- endif -%}
+		</div>
+	</div>
+</section>
+
+<!-- COLLECTIONS -->
+{% if collections %}
+<section class="akwaaba-section">
+	<div class="section-header">
+		<div>
+			<div class="section-eyebrow">The Collections</div>
+			<h2 class="section-title">
+				{%- if collections_count -%}
+					{{ collections_count }} houses,<br><em>one heritage.</em>
+				{%- else -%}
+					One heritage,<br><em>many silhouettes.</em>
+				{%- endif -%}
+			</h2>
+		</div>
+		<a href="/shop" class="section-link">Shop all →</a>
+	</div>
+
+	<div class="category-strip">
+		{%- for c in collections -%}
+		<a href="{{ c.url }}" class="category-card">
+			<div class="category-card__bg {{ c.bg_class }}"></div>
+			<div class="category-card__label">
+				{%- if c.eyebrow -%}<div class="category-card__eyebrow">{{ c.eyebrow }}</div>{%- endif -%}
+				<h3 class="category-card__title">{{ c.label }}</h3>
+				{%- if c.caption -%}<div class="category-card__meaning">{{ c.caption }}</div>{%- endif -%}
+			</div>
+		</a>
+		{%- endfor -%}
+	</div>
+</section>
+{% endif %}
+
+<!-- ADINKRA STRIP -->
+<section class="adinkra-strip">
+	<div class="adinkra-strip__inner">
+		<h2 class="adinkra-strip__heading">The Symbols We Weave</h2>
+		<p class="adinkra-strip__sub">Each Adinkra tells a proverb — worn, not just read.</p>
+
+		<div class="adinkra-strip__grid">
+			<div class="adinkra-item">
+				<svg class="adinkra-symbol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M32 8 L32 56 M8 32 L56 32 M14 14 L50 50 M50 14 L14 50" />
+					<circle cx="32" cy="32" r="10" fill="currentColor" opacity="0.15" />
+				</svg>
+				<div class="adinkra-name">Gye Nyame</div>
+				<div class="adinkra-meaning">Except for God — supremacy of God</div>
+			</div>
+
+			<div class="adinkra-item">
+				<svg class="adinkra-symbol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M20 44 Q12 32 20 20 Q32 12 44 20 Q52 32 44 44 Q32 52 20 44" />
+					<path d="M28 32 L36 32 M32 28 L32 36" />
+				</svg>
+				<div class="adinkra-name">Sankofa</div>
+				<div class="adinkra-meaning">Return and fetch it — learn from the past</div>
+			</div>
+
+			<div class="adinkra-item">
+				<svg class="adinkra-symbol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M20 20 Q10 32 20 44 M44 20 Q54 32 44 44" />
+					<circle cx="32" cy="32" r="6" fill="currentColor" opacity="0.2" />
+					<path d="M20 20 L44 20 M20 44 L44 44" />
+				</svg>
+				<div class="adinkra-name">Dwennimmen</div>
+				<div class="adinkra-meaning">Ram's horns — humility &amp; strength</div>
+			</div>
+
+			<div class="adinkra-item">
+				<svg class="adinkra-symbol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<circle cx="32" cy="32" r="22" />
+					<circle cx="32" cy="32" r="14" />
+					<circle cx="32" cy="32" r="6" fill="currentColor" opacity="0.2" />
+				</svg>
+				<div class="adinkra-name">Adinkrahene</div>
+				<div class="adinkra-meaning">Chief of symbols — leadership</div>
+			</div>
+
+			<div class="adinkra-item">
+				<svg class="adinkra-symbol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M32 10 L44 26 L38 26 L38 54 L26 54 L26 26 L20 26 Z" />
+				</svg>
+				<div class="adinkra-name">Nyame Nti</div>
+				<div class="adinkra-meaning">By God's grace — faith</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- STORY -->
+<section class="akwaaba-story">
+	<div class="akwaaba-story__inner">
+		<div>
+			<div class="akwaaba-story__eyebrow">Our Story</div>
+			<h2 class="akwaaba-story__title">
+				From the looms of <em>Bonwire</em> to
+				the streets of <em>Accra</em> —
+				and to your door.
+			</h2>
+			<p class="akwaaba-story__body">
+				Every Kente strip is a sentence. Every Adinkra symbol,
+				a proverb. Serwa Kollections works with weavers in Bonwire, printers
+				in Tema, and tailors across Osu to bring these stories
+				into modern silhouettes.
+			</p>
+			<p class="akwaaba-story__body">
+				We don't chase seasons. We chase meaning.
+			</p>
+			<a href="/story" class="akwaaba-story__link">Read the full story →</a>
+		</div>
+		<div class="akwaaba-story__visual"></div>
+	</div>
+</section>
+
+<!-- NEWSLETTER -->
+<section class="akwaaba-newsletter">
+	<div class="akwaaba-newsletter__inner">
+		<div class="akwaaba-newsletter__eyebrow">Stay Close</div>
+		<h2 class="akwaaba-newsletter__title">Join the <em>Ntoma</em> list.</h2>
+		<p class="akwaaba-newsletter__sub">
+			New drops, weaver stories, and the occasional Twi proverb.
+			No spam — <span class="twi">nkurɔfoɔ</span> only.
+		</p>
+		<form class="akwaaba-newsletter__form">
+			<input type="email" placeholder="your@email.com" required autocomplete="email">
+			<button type="submit">Subscribe</button>
+		</form>
+	</div>
+</section>
+
+{{ akwaaba_footer(akw_nav_collections) }}
+
+<div class="kente-strip"></div>
+
+{% endblock %}
+
+{% block footer %}{% endblock %}

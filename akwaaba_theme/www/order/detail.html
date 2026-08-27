@@ -1,0 +1,223 @@
+{% extends "templates/web.html" %}
+{% from "templates/includes/akwaaba/footer.html" import akwaaba_footer %}
+
+{% block title %}{{ title }}{% endblock %}
+{% block head_include %}
+	<meta name="robots" content="noindex,nofollow">
+	<meta name="theme-color" content="#0F0F0F">
+{% endblock %}
+
+{% block page_content %}
+
+<div class="kente-strip -thin"></div>
+
+<section class="akw-order">
+	{% if order %}
+
+		{# Payment banner (from Paystack redirect verify) #}
+		{% if payment_check and payment_check.status == "success" %}
+			<div class="akw-order__notice -success">
+				<strong>Payment received.</strong> Medaase — your order is confirmed.
+			</div>
+		{% elif payment_check and payment_check.status in ("failed", "abandoned") %}
+			<div class="akw-order__notice -warn">
+				Payment didn't go through. You can try again with the button below.
+			</div>
+		{% elif payment_check and payment_check.status == "pending" %}
+			<div class="akw-order__notice -info">
+				Payment is pending — we'll confirm as soon as it lands.
+			</div>
+		{% endif %}
+
+		<div class="akw-order__badge {% if order.is_paid %}-paid{% endif %}">
+			<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+				<circle cx="16" cy="16" r="13"/>
+				<path d="M10 16 L14.5 20.5 L22 12" />
+			</svg>
+		</div>
+		<div class="akw-order__eyebrow">
+			{% if order.is_paid %}Confirmed{% else %}Medaase!{% endif %}
+		</div>
+		<h1 class="akw-order__title">
+			{% if order.is_paid %}
+				Payment received, order confirmed.
+			{% else %}
+				Your order is with us.
+			{% endif %}
+		</h1>
+		<p class="akw-order__sub">
+			{% if order.is_paid %}
+				We're preparing your pieces. You'll hear from us on WhatsApp
+				with delivery details soon.
+			{% else %}
+				Pay now to lock in your order — or leave it and we'll follow up
+				on WhatsApp to arrange payment and delivery.
+			{% endif %}
+		</p>
+
+		<div class="akw-order__meta">
+			<div>
+				<div class="akw-order__meta-label">Order</div>
+				<div class="akw-order__meta-value">{{ order.name }}</div>
+			</div>
+			<div>
+				<div class="akw-order__meta-label">Placed</div>
+				<div class="akw-order__meta-value">{{ order.transaction_date }}</div>
+			</div>
+			<div>
+				<div class="akw-order__meta-label">Total</div>
+				<div class="akw-order__meta-value">
+					<span class="akw-order__ccy">{{ order.currency or currency }}</span>
+					<span>{{ '{:,.0f}'.format(order.grand_total or order.total or 0) }}</span>
+				</div>
+			</div>
+		</div>
+
+		{# Pay Now — only when unpaid AND Paystack is configured #}
+		{% if paystack_enabled and not order.is_paid %}
+		<div class="akw-order__pay">
+			<button type="button"
+				class="akw-order__pay-btn"
+				data-akw-pay-order="{{ order.name }}">
+				<span class="akw-order__pay-label">Pay {{ order.currency or currency }} {{ '{:,.0f}'.format(order.grand_total or order.total or 0) }} with {{ paystack_brand }}</span>
+				<span class="akw-order__pay-loading" aria-hidden="true">Redirecting…</span>
+			</button>
+			<div class="akw-order__pay-hint">
+				MoMo (MTN, Vodafone, AirtelTigo) &amp; Cards accepted · secured by Paystack
+			</div>
+			<div class="akw-order__pay-error" role="alert" hidden></div>
+		</div>
+		{% endif %}
+
+		{# Direct MoMo (manual) — send-to-number instructions + "I've paid" #}
+		{% if direct_momo and not order.is_paid %}
+		<div class="akw-order__momo" data-akw-momo-order="{{ order.name }}">
+			{% if order.payment_status == "Awaiting Confirmation" %}
+				<div class="akw-order__notice -info" data-akw-momo-pending>
+					<strong>We're confirming your payment.</strong>
+					Thanks — we've noted your MoMo. We'll confirm as soon as it
+					lands (usually a few minutes) and message you on WhatsApp.
+				</div>
+			{% else %}
+				<div class="akw-order__momo-card" data-akw-momo-instructions>
+					<div class="akw-order__momo-title">Pay by Mobile Money</div>
+					<p>Send
+						<strong>{{ order.currency or currency }} {{ '{:,.0f}'.format(order.grand_total or order.total or 0) }}</strong>
+						{% if direct_momo.network %}on <strong>{{ direct_momo.network }} MoMo</strong>{% endif %}
+						to:</p>
+					<div class="akw-order__momo-number">
+						<span class="akw-order__momo-num">{{ direct_momo.number }}</span>
+						{% if direct_momo.account_name %}
+						<span class="akw-order__momo-name">{{ direct_momo.account_name }}</span>
+						{% endif %}
+					</div>
+					<p class="akw-order__momo-ref">
+						Use <strong>{{ order.name }}</strong> as the payment reference so we
+						can match it fast.
+					</p>
+					{% if direct_momo.instructions %}
+					<p class="akw-order__momo-extra">{{ direct_momo.instructions }}</p>
+					{% endif %}
+
+					<div class="akw-order__momo-form">
+						<label class="akw-order__momo-field">
+							<span>Number you paid from (optional)</span>
+							<input type="tel" data-akw-momo-phone placeholder="024XXXXXXX">
+						</label>
+						<label class="akw-order__momo-field">
+							<span>MoMo transaction ID from your SMS (optional)</span>
+							<input type="text" data-akw-momo-txn placeholder="e.g. 1234567890">
+						</label>
+						<button type="button" class="akw-order__pay-btn" data-akw-momo-paid>
+							<span>I've sent the payment</span>
+						</button>
+						<div class="akw-order__pay-error" role="alert" data-akw-momo-error hidden></div>
+					</div>
+				</div>
+			{% endif %}
+		</div>
+
+		<script>
+		(function () {
+			var root = document.querySelector("[data-akw-momo-order]");
+			if (!root) return;
+			var btn = root.querySelector("[data-akw-momo-paid]");
+			if (!btn) return;
+			var order = root.getAttribute("data-akw-momo-order");
+			var errBox = root.querySelector("[data-akw-momo-error]");
+			btn.addEventListener("click", function () {
+				btn.disabled = true;
+				if (errBox) errBox.hidden = true;
+				var phoneEl = root.querySelector("[data-akw-momo-phone]");
+				var txnEl = root.querySelector("[data-akw-momo-txn]");
+				fetch("/api/method/akwaaba_theme.momo.submit_momo_claim", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || ""
+					},
+					body: JSON.stringify({
+						order_name: order,
+						payer_phone: phoneEl ? phoneEl.value : "",
+						txn_id: txnEl ? txnEl.value : ""
+					})
+				})
+				.then(function (r) { return r.json(); })
+				.then(function () { window.location.reload(); })
+				.catch(function () {
+					btn.disabled = false;
+					if (errBox) {
+						errBox.textContent = "Couldn't reach us. Please try again or message us on WhatsApp.";
+						errBox.hidden = false;
+					}
+				});
+			});
+		})();
+		</script>
+		{% endif %}
+
+		<div class="akw-order__items">
+			<div class="akw-order__items-title">Pieces on the way</div>
+			<ul>
+				{% for item in order.order_items %}
+				<li class="akw-order__item">
+					<span class="akw-order__item-title">{{ item.item_name or item.item_code }}</span>
+					<span class="akw-order__item-qty">×{{ item.qty | int }}</span>
+					<span class="akw-order__item-amount">
+						{{ order.currency or currency }} {{ '{:,.0f}'.format(item.amount or 0) }}
+					</span>
+				</li>
+				{% endfor %}
+			</ul>
+		</div>
+
+		<div class="akw-order__actions">
+			<a href="/shop" class="akw-order__cta">Keep exploring</a>
+			<a href="/" class="akw-order__cta -outline">Back home</a>
+		</div>
+
+		{% if order.terms %}
+		<div class="akw-order__note">
+			<div class="akw-order__note-title">Order notes</div>
+			<p>{{ order.terms }}</p>
+		</div>
+		{% endif %}
+
+	{% else %}
+		<div class="akw-order__eyebrow">Order</div>
+		<h1 class="akw-order__title">We couldn't find that order.</h1>
+		<p class="akw-order__sub">Try heading back to your cart or the shop.</p>
+		<div class="akw-order__actions">
+			<a href="/cart" class="akw-order__cta">View cart</a>
+			<a href="/shop" class="akw-order__cta -outline">Shop</a>
+		</div>
+	{% endif %}
+</section>
+
+<div class="kente-strip -thin"></div>
+
+{{ akwaaba_footer(akw_nav_collections) }}
+
+{% endblock %}
+
+{% block footer %}{% endblock %}

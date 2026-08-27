@@ -1,0 +1,150 @@
+/* =========================================================================
+ * AKWAABA — bespoke product detail page (/product/<slug>)
+ * Replaces webshop's stock item page. Uses the theme's design tokens.
+ * ========================================================================= */
+
+/* ---- Breadcrumb (themed) -------------------------------------------- */
+.akw-crumbs {
+	max-width: var(--max-w, 1400px);
+	margin: 0 auto;
+	padding: 1.1rem var(--gutter, 1.25rem) 0.25rem;
+	font-family: var(--font-body);
+	font-size: 0.68rem;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--charcoal-soft);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.1rem;
+}
+.akw-crumbs a { color: var(--charcoal-soft); text-decoration: none; transition: color 0.15s; }
+.akw-crumbs a:hover { color: var(--kente-gold-deep); }
+.akw-crumbs__sep { margin: 0 0.55rem; opacity: 0.4; }
+.akw-crumbs__current { color: var(--charcoal); }
+
+/* ---- Layout --------------------------------------------------------- */
+.akw-pdp {
+	max-width: var(--max-w, 1400px);
+	margin: 0 auto;
+	padding: 1.5rem var(--gutter, 1.25rem) 2rem;
+	display: grid;
+	grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+	gap: clamp(1.5rem, 4vw, 3.5rem);
+	align-items: start;
+}
+@media (max-width: 820px) {
+	.akw-pdp { grid-template-columns: 1fr; gap: 1.5rem; }
+}
+
+/* ---- Gallery -------------------------------------------------------- */
+.akw-pdp__gallery { position: sticky; top: calc(var(--nav-h, 60px) + 1rem); }
+@media (max-width: 820px) { .akw-pdp__gallery { position: static; } }
+
+.akw-pdp__hero {
+	position: relative;
+	aspect-ratio: 3 / 4;
+	background: var(--cream-lighter);
+	border: 1px solid var(--line);
+	overflow: hidden;
+}
+.akw-pdp__hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.akw-pdp__hero--empty {
+	display: flex; align-items: center; justify-content: center;
+	font-family: var(--font-display); font-size: 3rem; color: var(--charcoal-soft);
+}
+.akw-pdp__flag {
+	position: absolute; top: 0.75rem; left: 0.75rem;
+	background: var(--charcoal); color: var(--cream);
+	font-size: 0.62rem; letter-spacing: 0.15em; text-transform: uppercase;
+	padding: 0.3rem 0.6rem;
+}
+.akw-pdp__thumbs {
+	display: flex; gap: 0.5rem; margin-top: 0.6rem;
+	overflow-x: auto; padding-bottom: 0.25rem;
+}
+.akw-pdp__thumb {
+	flex: 0 0 auto; width: 66px; aspect-ratio: 3/4;
+	border: 1px solid var(--line); background: none; padding: 0; cursor: pointer;
+	overflow: hidden; opacity: 0.7; transition: opacity 0.15s, border-color 0.15s;
+}
+.akw-pdp__thumb img { width: 100%; height: 100%; object-fit: cover; }
+.akw-pdp__thumb:hover { opacity: 1; }
+.akw-pdp__thumb.-active { opacity: 1; border-color: var(--kente-gold); }
+
+/* ---- Details -------------------------------------------------------- */
+.akw-pdp__eyebrow {
+	font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase;
+	color: var(--kente-gold-deep); margin-bottom: 0.6rem;
+}
+.akw-pdp__title {
+	font-family: var(--font-display); font-weight: 600;
+	font-size: clamp(1.7rem, 5vw, 2.7rem); line-height: 1.1;
+	color: var(--charcoal); margin: 0 0 0.75rem;
+}
+.akw-pdp__price {
+	font-family: var(--font-body); color: var(--charcoal);
+	font-size: 1.5rem; font-weight: 500; margin-bottom: 1.25rem;
+	display: flex; align-items: baseline; gap: 0.4rem;
+}
+.akw-pdp__from { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--charcoal-soft); }
+.akw-pdp__ccy { font-size: 0.9rem; color: var(--charcoal-soft); }
+.akw-pdp__lede { color: var(--charcoal-soft); font-size: 0.95rem; line-height: 1.6; margin: 0 0 1.5rem; }
+
+/* sizes */
+.akw-pdp__sizes-block { margin-bottom: 1.5rem; }
+.akw-pdp__sizes-label {
+	font-size: 0.7rem; letter-spacing: 0.15em; text-transform: uppercase;
+	color: var(--charcoal-soft); margin-bottom: 0.5rem;
+}
+.akw-pdp__sizes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.akw-pdp__size {
+	min-width: var(--tap, 44px); min-height: var(--tap, 44px);
+	padding: 0 0.9rem;
+	border: 1px solid var(--charcoal); background: transparent;
+	font-family: var(--font-body); font-size: 0.85rem; color: var(--charcoal);
+	cursor: pointer; transition: all 0.15s;
+}
+.akw-pdp__size:hover { border-color: var(--kente-gold-deep); }
+.akw-pdp__size.-active { background: var(--charcoal); color: var(--cream); border-color: var(--charcoal); }
+.akw-pdp__size.-oos {
+	opacity: 0.4; cursor: not-allowed;
+	text-decoration: line-through; text-decoration-thickness: 1px;
+}
+.akw-pdp__hint { color: var(--kente-red); font-size: 0.78rem; margin-top: 0.5rem; }
+
+/* add to cart */
+.akw-pdp__add {
+	width: 100%; max-width: 22rem;
+	background: var(--charcoal); color: var(--cream);
+	border: none; border-radius: 0;
+	padding: 1.05rem 1.6rem;
+	font-family: var(--font-body); font-weight: 500; font-size: 0.82rem;
+	text-transform: uppercase; letter-spacing: 0.15em;
+	cursor: pointer; transition: background 0.2s, transform 0.15s;
+	min-height: var(--tap, 44px);
+}
+.akw-pdp__add:hover { background: var(--kente-gold-deep); transform: translateY(-1px); }
+.akw-pdp__add.-disabled, .akw-pdp__add:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.akw-pdp__add.-added { background: var(--kente-green); }
+.akw-pdp__add.-added a { color: var(--cream); text-decoration: underline; }
+
+/* description + specs */
+.akw-pdp__desc {
+	margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
+	color: var(--charcoal); font-size: 0.95rem; line-height: 1.7;
+}
+.akw-pdp__desc :is(p, li) { color: var(--charcoal-soft); }
+.akw-pdp__specs { margin-top: 1.5rem; }
+.akw-pdp__specs-title {
+	font-size: 0.7rem; letter-spacing: 0.15em; text-transform: uppercase;
+	color: var(--charcoal-soft); margin-bottom: 0.6rem;
+}
+.akw-pdp__specs dl { margin: 0; }
+.akw-pdp__spec-row {
+	display: grid; grid-template-columns: 40% 60%;
+	gap: 0.5rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line);
+	font-size: 0.85rem;
+}
+.akw-pdp__spec-row dt { color: var(--charcoal-soft); margin: 0; }
+.akw-pdp__spec-row dd { color: var(--charcoal); margin: 0; }

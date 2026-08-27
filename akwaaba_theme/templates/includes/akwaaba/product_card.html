@@ -1,0 +1,114 @@
+{#-
+	Akwaaba product card macro.
+	Usage:
+		{% from "templates/includes/akwaaba/product_card.html" import akw_card %}
+		{{ akw_card(item) }}
+
+	Expects `item` dict with:
+		item_code, route, item_group,
+		item_name / web_item_name,
+		website_image (optional),
+		hover_video_url (optional), hover_video_poster_url (optional),
+		price (float, optional), currency (str, default GHS),
+		has_variants (bool), on_backorder (bool),
+		price_from (bool, optional — renders "from ₵X" label),
+		variant_options (list, optional — [{code, size, price, oos}, ...])
+
+	Variant-selection interaction (Pattern A, reveal-in-place):
+	  1. rest       — price on left, "Add" button on right
+	  2. sizes open — chips row spans the whole footer
+	  3. added      — size label on left, qty stepper on right
+	  Footer height is fixed so the grid never reflows on state change.
+-#}
+
+{% macro akw_card(item) -%}
+{%- set title = item.web_item_name or item.item_name or item.item_code -%}
+{%- set price = item.price or 0 -%}
+{%- set currency = item.currency or "GHS" -%}
+{%- set poster = item.hover_video_poster_url or item.website_image -%}
+{%- set variants = item.variant_options or [] -%}
+{%- set has_variants = item.has_variants and variants|length > 0 -%}
+<article class="akw-card"
+	data-item-code="{{ item.item_code }}"
+	{% if has_variants %}data-template-code="{{ item.item_code }}" data-variants='{{ variants | tojson }}'{% endif %}>
+	<a href="/product/{{ item.route or item.item_code }}" class="akw-card__media" aria-label="{{ title }}">
+		{%- if item.website_image -%}
+			<img class="akw-card__img"
+				src="{{ item.website_image }}"
+				alt="{{ title }}"
+				loading="lazy" decoding="async">
+		{%- else -%}
+			<div class="akw-card__no-image">{{ item.item_code[:2] | upper }}</div>
+		{%- endif -%}
+
+		{%- if item.hover_video_url -%}
+			<video class="akw-card__video"
+				muted loop playsinline webkit-playsinline
+				preload="metadata"
+				{% if poster %}poster="{{ poster }}"{% endif %}
+				data-src="{{ item.hover_video_url }}"></video>
+			<span class="akw-card__media-badge" aria-hidden="true">▶</span>
+		{%- endif -%}
+
+		{%- if item.on_backorder -%}
+			<span class="akw-card__flag">Backorder</span>
+		{%- endif -%}
+	</a>
+
+	<div class="akw-card__body">
+		<a href="/product/{{ item.route or item.item_code }}" class="akw-card__title-link">
+			<h3 class="akw-card__title">{{ title }}</h3>
+		</a>
+		<div class="akw-card__group">{{ item.item_group }}</div>
+
+		{# Fixed-height footer that holds all three states. #}
+		<div class="akw-card__row">
+			{# STATE 1 (rest) + STATE 3 (added) share this side #}
+			<span class="akw-card__price" data-role="price">
+				{%- if item.price_from -%}
+					<span class="akw-card__from">from</span>
+				{%- endif -%}
+				<span class="akw-card__ccy">{{ currency }}</span>
+				<span class="akw-card__amount">{{ '{:,.0f}'.format(price) }}</span>
+			</span>
+			<span class="akw-card__size-tag" data-role="size-tag" hidden></span>
+
+			{# STATE 1 (rest) — the Add button #}
+			<button type="button"
+				class="akw-card__cta -add"
+				data-item-code="{{ item.item_code }}"
+				aria-label="Add {{ title }} to cart">
+				<span class="akw-card__cta-text">{% if has_variants %}Select size{% else %}Add{% endif %}</span>
+				<svg class="akw-card__cta-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+					<path d="M4 5 L16 5 L14.5 14 L5.5 14 Z"/>
+					<circle cx="7.5" cy="17" r="1"/>
+					<circle cx="12.5" cy="17" r="1"/>
+				</svg>
+			</button>
+
+			{# STATE 3 — the stepper (populated on add with the resolved variant code) #}
+			<div class="akw-card__stepper" data-item-code="{{ item.item_code }}" hidden>
+				<button type="button" class="akw-card__step -down" data-step="down" aria-label="Decrease quantity">−</button>
+				<span class="akw-card__qty" aria-live="polite">1</span>
+				<button type="button" class="akw-card__step -up" data-step="up" aria-label="Increase quantity">+</button>
+			</div>
+		</div>
+
+		{# STATE 2 — size chip strip, overlays the whole footer row #}
+		{%- if has_variants -%}
+		<div class="akw-card__sizes" hidden aria-label="Select size">
+			{%- for v in variants -%}
+				<button type="button"
+					class="akw-card__size{% if v.oos %} -oos{% endif %}"
+					data-variant-code="{{ v.code }}"
+					data-size="{{ v.size }}"
+					{% if v.oos %}aria-disabled="true" title="Out of stock — join waitlist"{% endif %}>
+					{{ v.size }}
+				</button>
+			{%- endfor -%}
+			<button type="button" class="akw-card__size-close" aria-label="Cancel">×</button>
+		</div>
+		{%- endif -%}
+	</div>
+</article>
+{%- endmacro %}
