@@ -688,47 +688,28 @@ img { max-width: 100%; height: auto; display: block; }
 	margin-top: 0.3rem;
 }
 
-.bg-kente-collection { background: linear-gradient(135deg, #C9962B 0%, #A17217 50%, #0F0F0F 100%); }
-.bg-adinkra-tees { background: linear-gradient(135deg, #F7F1E7 0%, #C9962B 100%); }
-.bg-fugu-smock { background: linear-gradient(135deg, #4A413A 0%, #B8322B 100%); }
-.bg-ankara-wear { background: linear-gradient(135deg, #1B5E20 0%, #C9962B 60%, #B8322B 100%); }
-.bg-kaba-slit { background: linear-gradient(135deg, #143D8A 0%, #B8322B 100%); }
-.bg-accessories { background: linear-gradient(135deg, #0F0F0F 0%, #C9962B 100%); }
-
-.pattern-kente {
-	background:
-		repeating-linear-gradient(0deg, transparent 0 20px, rgba(0,0,0,0.15) 20px 22px),
-		repeating-linear-gradient(90deg, transparent 0 20px, rgba(0,0,0,0.1) 20px 22px),
-		linear-gradient(135deg, #C9962B 0%, #A17217 50%, #0F0F0F 100%);
+/* Collection card background: a crossfading slideshow of the group's own
+   product photos (see context.py::_collection_images). Each card gets a
+   scoped @keyframes rule (inline, sized to its own photo count) so the
+   fade timing always divides evenly regardless of how many images it has.
+   No photos yet → a plain neutral gradient, not a per-category graphic. */
+.category-card__bg.-slideshow { background: var(--charcoal); }
+.category-card__slide {
+	position: absolute; inset: 0;
+	background-size: cover;
+	background-position: center;
+	opacity: 0;
+	animation-iteration-count: infinite;
+	animation-timing-function: ease-in-out;
 }
-.pattern-adinkra {
-	background:
-		radial-gradient(circle at 25% 25%, rgba(15,15,15,0.15) 12px, transparent 13px),
-		radial-gradient(circle at 75% 75%, rgba(15,15,15,0.15) 12px, transparent 13px),
-		linear-gradient(135deg, #F7F1E7 0%, #C9962B 100%);
-	background-size: 60px 60px, 60px 60px, 100% 100%;
+.category-card__bg.-empty {
+	background: linear-gradient(135deg, var(--charcoal) 0%, var(--kente-gold-deep) 100%);
 }
-.pattern-fugu {
-	background:
-		repeating-linear-gradient(90deg, rgba(15,15,15,0.15) 0 4px, transparent 4px 20px),
-		linear-gradient(135deg, #4A413A 0%, #B8322B 100%);
-}
-.pattern-ankara {
-	background:
-		radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 20px, transparent 22px),
-		linear-gradient(135deg, #1B5E20 0%, #C9962B 60%, #B8322B 100%);
-	background-size: 80px 80px, 100% 100%;
-}
-.pattern-kaba {
-	background:
-		repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0 8px, transparent 8px 24px),
-		linear-gradient(135deg, #143D8A 0%, #B8322B 100%);
-}
-.pattern-accessories {
-	background:
-		radial-gradient(circle at 30% 40%, rgba(201,150,43,0.3) 20px, transparent 22px),
-		radial-gradient(circle at 70% 60%, rgba(201,150,43,0.2) 30px, transparent 32px),
-		linear-gradient(135deg, #0F0F0F 0%, #C9962B 100%);
+@media (prefers-reduced-motion: reduce) {
+	/* !important: each slide carries its animation inline (duration/delay
+	   vary per card), which otherwise outranks this override. */
+	.category-card__slide { animation: none !important; opacity: 1 !important; }
+	.category-card__slide ~ .category-card__slide { display: none !important; }
 }
 
 /* ============================================================================

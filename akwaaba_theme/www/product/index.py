@@ -38,6 +38,7 @@ def get_context(context):
 
 	context.item = item
 	context.gallery = _gallery(item)
+	context.attachments = _attachments(item)
 	context.specs = _specs(item.get("name"))
 	context.description = item.get("web_long_description") or item.get("description") or ""
 	context.currency = "GHS"
@@ -46,7 +47,6 @@ def get_context(context):
 	context.in_stock = not item.get("on_backorder")
 	context.preselect_size = item.get("preselect_size")
 	context.crumbs = _crumbs(item)
-	context.enable_fitting_studio = True
 
 	title = item.get("web_item_name") or item.get("item_name") or item.get("item_code")
 	context.product_title = title
@@ -178,6 +178,35 @@ def _gallery(item):
 			if r.image and r.image not in imgs:
 				imgs.append(r.image)
 	return imgs
+
+
+def _attachments(item):
+	"""Public file attachments on the item's Item + Website Item documents.
+
+	Distinct from _gallery(): that's the curated hero/slideshow; this is
+	whatever files the admin attached to the document directly, shown as a
+	simple "Gallery" strip further down the page.
+	"""
+	targets = [("Item", item.get("item_code"))]
+	if item.get("name"):
+		targets.append(("Website Item", item["name"]))
+
+	seen = set()
+	files = []
+	for doctype, name in targets:
+		if not name:
+			continue
+		rows = frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": doctype, "attached_to_name": name, "is_private": 0},
+			fields=["file_url", "file_name"],
+			order_by="creation asc",
+		)
+		for row in rows:
+			if row.file_url and row.file_url not in seen:
+				seen.add(row.file_url)
+				files.append(row)
+	return files
 
 
 def _specs(wi_name):

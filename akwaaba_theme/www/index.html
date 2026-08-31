@@ -108,8 +108,36 @@
 
 	<div class="category-strip">
 		{%- for c in collections -%}
+		{%- set card_idx = loop.index -%}
 		<a href="{{ c.url }}" class="category-card">
-			<div class="category-card__bg {{ c.bg_class }}"></div>
+			{%- if c.images and c.images|length > 1 -%}
+				{%- set n = c.images|length -%}
+				{%- set slot = 4 -%}
+				{%- set fade = 0.8 -%}
+				{%- set total = n * slot -%}
+				{%- set fade_pct = (fade / total * 100) -%}
+				{%- set seg_pct = (100 / n) -%}
+				<div class="category-card__bg -slideshow">
+					<style>
+					@keyframes akw-cardfade-{{ card_idx }} {
+						0% { opacity: 0; }
+						{{ "%.2f"|format(fade_pct) }}% { opacity: 1; }
+						{{ "%.2f"|format(seg_pct - fade_pct) }}% { opacity: 1; }
+						{{ "%.2f"|format(seg_pct) }}% { opacity: 0; }
+						100% { opacity: 0; }
+					}
+					</style>
+					{%- for img in c.images -%}
+					<div class="category-card__slide" style="background-image:url('{{ img }}'); animation-name: akw-cardfade-{{ card_idx }}; animation-duration: {{ total }}s; animation-delay: {{ loop.index0 * slot }}s;"></div>
+					{%- endfor -%}
+				</div>
+			{%- elif c.images -%}
+				<div class="category-card__bg -slideshow">
+					<div class="category-card__slide" style="background-image:url('{{ c.images[0] }}'); opacity:1; animation:none;"></div>
+				</div>
+			{%- else -%}
+				<div class="category-card__bg -empty"></div>
+			{%- endif -%}
 			<div class="category-card__label">
 				{%- if c.eyebrow -%}<div class="category-card__eyebrow">{{ c.eyebrow }}</div>{%- endif -%}
 				<h3 class="category-card__title">{{ c.label }}</h3>

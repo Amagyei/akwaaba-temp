@@ -36,7 +36,6 @@ def get_shop_collections(homepage_only=False, nav_only=False):
 			"homepage_position",
 			"homepage_eyebrow",
 			"homepage_caption",
-			"homepage_background_class",
 			"show_in_nav",
 		]
 
@@ -63,10 +62,31 @@ def get_shop_collections(homepage_only=False, nav_only=False):
 	for r in rows:
 		r.label = r.get("item_group_name") or r.get("name")
 		r.url = "/shop?category=" + (r.get("route") or r.get("name") or "")
-		r.bg_class = r.get("homepage_background_class") or "pattern-kente"
 		r.eyebrow = r.get("homepage_eyebrow") or ""
 		r.caption = r.get("homepage_caption") or ""
+		r.images = _collection_images(r.get("name"))
 	return rows
+
+
+def _collection_images(item_group, limit=5):
+	"""A handful of real product photos for this Item Group's homepage card,
+	newest first. Powers a background slideshow instead of a static swatch."""
+	if not item_group:
+		return []
+	rows = frappe.db.sql(
+		"""
+		SELECT COALESCE(NULLIF(wi.website_image, ''), i.image) AS image
+		FROM `tabWebsite Item` wi
+		LEFT JOIN `tabItem` i ON i.item_code = wi.item_code
+		WHERE wi.published = 1 AND wi.item_group = %(item_group)s
+		  AND COALESCE(NULLIF(wi.website_image, ''), i.image, '') != ''
+		ORDER BY wi.creation DESC
+		LIMIT %(limit)s
+		""",
+		{"item_group": item_group, "limit": limit},
+		as_dict=True,
+	)
+	return [r.image for r in rows]
 
 
 def get_hero_slides(limit=6):

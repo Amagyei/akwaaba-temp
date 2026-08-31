@@ -172,6 +172,20 @@ def _create_custom_fields():
 					"back to newest. Only used when Feature on Hero is checked."
 				),
 			},
+			{
+				"fieldname": "colorway_code",
+				"label": "Colorway Code",
+				"fieldtype": "Data",
+				"insert_after": "hero_position",
+				"hidden": 1,
+				"description": (
+					"Internal key grouping items that share the same fabric "
+					"colorway, e.g. 'ohm-sankofa'. Not shown on the site — "
+					"used for sorting and reporting only. Length itself is "
+					"modeled as a Size variant (Mini/Midi/Maxi), reusing the "
+					"same attribute the storefront already renders as chips."
+				),
+			},
 		],
 		"Item Group": [
 			{
@@ -212,21 +226,10 @@ def _create_custom_fields():
 				),
 			},
 			{
-				"fieldname": "homepage_background_class",
-				"label": "Homepage Background CSS Class",
-				"fieldtype": "Data",
-				"insert_after": "homepage_caption",
-				"description": (
-					"One of: pattern-kente, pattern-adinkra, pattern-fugu, "
-					"pattern-ankara, pattern-kaba, pattern-accessories. "
-					"See akwaaba.css for available presets."
-				),
-			},
-			{
 				"fieldname": "show_in_nav",
 				"label": "Show in Top Navigation",
 				"fieldtype": "Check",
-				"insert_after": "homepage_background_class",
+				"insert_after": "homepage_caption",
 				"default": "1",
 			},
 		],

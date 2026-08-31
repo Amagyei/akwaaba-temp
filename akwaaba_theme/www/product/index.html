@@ -7,7 +7,6 @@
 	<meta name="description" content="{{ meta_description }}">
 	<meta name="theme-color" content="#0F0F0F">
 	<link rel="stylesheet" href="/assets/akwaaba_theme/css/product.css">
-	<link rel="stylesheet" href="/assets/akwaaba_theme/css/fitting-studio.css">
 {% endblock %}
 
 {% block page_content %}
@@ -107,16 +106,36 @@
 	</div>
 </section>
 
-<!-- THE FITTING STUDIO (auto-mounts on the data attribute) -->
-{% if enable_fitting_studio %}
-<section class="akwfs-itemblock">
-	<div class="akwfs-itemblock-head">
-		<span class="akwfs-eyebrow">The Fitting Studio</span>
-		<h2>See it on your figure</h2>
-		<p>Adjust the dress form to your measurements and drape the kente before you buy.</p>
+<!-- GALLERY (item's own document attachments) -->
+{% if attachments %}
+<section class="akw-pdp__attachments">
+	<div class="akw-pdp__attachments-head">
+		<span class="akw-pdp__attachments-eyebrow">More Views</span>
+		<h2 class="akw-pdp__attachments-title">Gallery</h2>
 	</div>
-	<div data-akw-fitting-studio></div>
+	<div class="akw-pdp__attachments-strip" role="list">
+		{%- for a in attachments -%}
+		<button type="button" class="akw-pdp__attachment" data-index="{{ loop.index0 }}"
+			aria-label="View photo {{ loop.index }} of {{ attachments|length }}{{ ' — ' + a.file_name if a.file_name else '' }}, enlarge">
+			<img src="{{ a.file_url }}" alt="{{ a.file_name or product_title }}" loading="lazy">
+		</button>
+		{%- endfor -%}
+	</div>
 </section>
+
+<!-- Lightbox (shared by all gallery buttons above) -->
+<div class="akw-lightbox" id="akw-lightbox" hidden aria-hidden="true">
+	<div class="akw-lightbox__scrim" data-akw-lightbox-close></div>
+	<div class="akw-lightbox__dialog" role="dialog" aria-modal="true" aria-label="Photo viewer">
+		<button type="button" class="akw-lightbox__close" data-akw-lightbox-close aria-label="Close">&times;</button>
+		<button type="button" class="akw-lightbox__nav -prev" aria-label="Previous photo">&#8249;</button>
+		<figure class="akw-lightbox__figure">
+			<img class="akw-lightbox__img" src="" alt="">
+			<figcaption class="akw-lightbox__caption"></figcaption>
+		</figure>
+		<button type="button" class="akw-lightbox__nav -next" aria-label="Next photo">&#8250;</button>
+	</div>
+</div>
 {% endif %}
 
 <div class="kente-strip -thin"></div>

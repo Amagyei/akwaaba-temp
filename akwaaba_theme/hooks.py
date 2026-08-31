@@ -6,17 +6,11 @@ app_email = "amagyei@example.com"
 app_license = "mit"
 
 # Assets injected into every website page (includes webshop).
-# fitting-studio.* powers the Fitting Studio widget: it auto-mounts on
-# webshop item pages (which are upstream templates we don't edit) and on any
-# [data-akw-fitting-studio] element. Loading it site-wide is how it reaches
-# the item page without touching webshop.
 web_include_css = [
 	"/assets/akwaaba_theme/css/akwaaba.css",
-	"/assets/akwaaba_theme/css/fitting-studio.css",
 ]
 web_include_js = [
 	"/assets/akwaaba_theme/js/akwaaba.js",
-	"/assets/akwaaba_theme/js/fitting-studio.js",
 ]
 
 # Homepage: serves www/index.html at "/"
@@ -91,12 +85,14 @@ fixtures = [
 				"hover_video_poster_url",
 				"feature_on_hero",
 				"hero_position",
+				# Website Item — internal colorway tracking (length uses the
+				# existing Size variant attribute, not a custom field)
+				"colorway_code",
 				# Item Group — homepage/nav display metadata
 				"akwaaba_display_section",
 				"homepage_position",
 				"homepage_eyebrow",
 				"homepage_caption",
-				"homepage_background_class",
 				"show_in_nav",
 				# Contact — compat shim for erpnext develop against frappe v16
 				"is_billing_contact",

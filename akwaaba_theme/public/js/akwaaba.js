@@ -782,6 +782,83 @@
 	}
 
 	// =======================================================================
+	// PRODUCT GALLERY LIGHTBOX (/product/<slug> — item document attachments)
+	// Click a thumbnail to enlarge; Esc / scrim / close button dismiss;
+	// arrow keys and nav buttons step through photos. Focus is trapped to
+	// the dialog while open and restored to the trigger on close.
+	// =======================================================================
+	function bindAttachmentsLightbox() {
+		const lightbox = document.getElementById("akw-lightbox");
+		const strip = document.querySelector(".akw-pdp__attachments-strip");
+		if (!lightbox || !strip) return;
+
+		const thumbs = Array.prototype.slice.call(strip.querySelectorAll(".akw-pdp__attachment"));
+		if (!thumbs.length) return;
+
+		const imgEl = lightbox.querySelector(".akw-lightbox__img");
+		const captionEl = lightbox.querySelector(".akw-lightbox__caption");
+		const closeBtn = lightbox.querySelector(".akw-lightbox__close");
+		const prevBtn = lightbox.querySelector(".akw-lightbox__nav.-prev");
+		const nextBtn = lightbox.querySelector(".akw-lightbox__nav.-next");
+
+		const photos = thumbs.map(function (btn) {
+			const img = btn.querySelector("img");
+			return { src: img.getAttribute("src"), alt: img.getAttribute("alt") || "" };
+		});
+
+		let activeIndex = 0;
+		let lastTrigger = null;
+
+		function show(index) {
+			activeIndex = (index + photos.length) % photos.length;
+			const p = photos[activeIndex];
+			imgEl.src = p.src;
+			imgEl.alt = p.alt;
+			captionEl.textContent = photos.length > 1 ?
+				(activeIndex + 1) + " / " + photos.length : "";
+		}
+
+		function open(index, trigger) {
+			lastTrigger = trigger || null;
+			show(index);
+			lightbox.hidden = false;
+			lightbox.setAttribute("aria-hidden", "false");
+			document.body.style.overflow = "hidden";
+			closeBtn.focus();
+			document.addEventListener("keydown", onKeydown);
+		}
+
+		function close() {
+			lightbox.hidden = true;
+			lightbox.setAttribute("aria-hidden", "true");
+			document.body.style.overflow = "";
+			document.removeEventListener("keydown", onKeydown);
+			if (lastTrigger) lastTrigger.focus();
+		}
+
+		function onKeydown(e) {
+			if (e.key === "Escape") { close(); return; }
+			if (e.key === "ArrowLeft") { show(activeIndex - 1); return; }
+			if (e.key === "ArrowRight") { show(activeIndex + 1); return; }
+		}
+
+		thumbs.forEach(function (btn, i) {
+			btn.addEventListener("click", function () { open(i, btn); });
+		});
+
+		lightbox.querySelectorAll("[data-akw-lightbox-close]").forEach(function (el) {
+			el.addEventListener("click", close);
+		});
+		prevBtn.addEventListener("click", function () { show(activeIndex - 1); });
+		nextBtn.addEventListener("click", function () { show(activeIndex + 1); });
+
+		if (photos.length < 2) {
+			prevBtn.hidden = true;
+			nextBtn.hidden = true;
+		}
+	}
+
+	// =======================================================================
 	// BOOT
 	// =======================================================================
 	function boot() {
@@ -797,6 +874,7 @@
 		initAkwHeroCarousel();
 		initNavDrawer();
 		bindProductPage();
+		bindAttachmentsLightbox();
 	}
 
 	if (document.readyState === "loading") {
