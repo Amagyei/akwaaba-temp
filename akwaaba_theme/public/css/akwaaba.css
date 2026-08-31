@@ -3070,3 +3070,59 @@ body[data-path="cart"] main {
 	padding-bottom: var(--space-md);
 	margin-bottom: var(--space-lg);
 }
+
+/* ============================================================================
+   CONTAINER PADDING + MAX-WIDTH RESET
+   Frappe's core website.bundle.css (compiled from
+   frappe/public/scss/website/index.scss) sets side padding on .container
+   at every breakpoint (1.25rem base, 0 at >=576px, 2.5rem at >=992px)
+   plus Bootstrap's own container/container-sm/-md/-lg/-xl max-width caps
+   (540/720or840/960or1090/1140-ish depending on breakpoint) and 15px
+   base padding. Both fight the full-bleed layout we want.
+   We don't touch that core file — it's shared with desk-adjacent website
+   pages and gets overwritten on every app update. Since this stylesheet
+   is injected only on storefront pages (web_include_css in hooks.py) and
+   loads after the core bundle, a plain same-specificity override here is
+   enough to win at every breakpoint without !important. Desk keeps its
+   own .container padding/max-width untouched.
+   ============================================================================ */
+.container,
+.container-fluid,
+.container-sm,
+.container-md,
+.container-lg,
+.container-xl {
+	max-width: none;
+	padding-left: 0;
+	padding-right: 0;
+}
+@media (min-width: 576px) {
+	.container-sm, .container { max-width: none; padding-left: 0; padding-right: 0; }
+}
+@media (min-width: 768px) {
+	.container-md, .container-sm, .container { max-width: none; padding-left: 0; padding-right: 0; }
+}
+@media (min-width: 992px) {
+	.container-lg, .container-md, .container-sm, .container { max-width: none; padding-left: 0; padding-right: 0; }
+}
+@media (min-width: 1200px) {
+	.container-xl, .container-lg, .container-md, .container-sm, .container { max-width: none; padding-left: 0; padding-right: 0; }
+}
+
+/* frappe/public/scss/website/index.scss also pads .page-content-wrapper
+   .container specifically below 992px — same override, same reasoning. */
+@media (max-width: 992px) {
+	.page-content-wrapper .container {
+		padding-left: 0;
+		padding-right: 0;
+	}
+}
+
+/* frappe/public/scss/website/navbar.scss sets flex-wrap: wrap on .navbar,
+   which lets our single-row nav wrap awkwardly at in-between widths.
+   Our own .navbar rule above already runs display:flex without wrapping;
+   this just cancels the core rule's flex-wrap explicitly since it's the
+   more specific one loaded first. */
+.navbar {
+	flex-wrap: nowrap;
+}
