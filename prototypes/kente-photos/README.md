@@ -9,7 +9,7 @@ Each cloth is many ~4-inch weft-faced strips sewn side by side. In these photos 
 
 ## Cloths on the loom
 
-All 15 cloths below are recreated in the page, after the hand-drawn "Photo sample". The names are placeholders. Photos 05, 06 (right) and 07 show the same blue stole, so the earlier "I" group is merged into H.
+Each strip on the loom is cut from the real photos. No pattern is redrawn. "Photo sample" comes from `photo-sample-4.jpg`, and the 15 cloths below come from the owner's photos. The names are placeholders. Photos 05, 06 (right side) and 07 show the same blue stole, so the earlier "I" group is merged into H.
 
 | Cloth | Placeholder name | Photo used | Also in |
 |---|---|---|---|
@@ -33,13 +33,11 @@ The owner also has 6 videos that could not be copied here, because macOS blocks 
 
 ## How the strips were made (`tools/`)
 
-1. `cloths.py` lists 3–6 block crops per cloth, as four corner points in the photo. The last block is cut off where the strip ends (4.18 strip-widths).
-2. `build.py` straightens each crop, turns it 90° clockwise, and reads it as a grid 40 cells across. The colours come from per-pixel k-means clustering in Lab space, with near-duplicate colours merged and saturation lifted slightly. Each cell takes its majority colour, and isolated or mottled cells are cleaned up. It also writes preview PNGs that show each photo crop beside its recreation.
-3. `assemble.py` marks lurex colours (picked by eye) and merges colours that were only split by uneven light. It then run-length encodes the grids into the `CLOTHS` array in the page.
+1. `cloths.py` lists 3–7 block cuts per cloth, as four corner points in the photo. In the owner's photos each block hangs as a horizontal row, so it is turned 90° clockwise to run down the strip. The sample photo's strips already run top to bottom.
+2. `cut.py` straightens each cut, stretches its contrast slightly, and stacks the cuts at their real proportions with a thin white line between them. The last block is cut where the loom strip ends (4.18 strip-widths). It then writes each strip as an embedded JPEG, together with the warp-thread colours and the bobbin colour.
 
 ```
-python3 -I tools/build.py . /tmp/kente-out
-python3 -I tools/assemble.py /tmp/kente-out   # then paste /tmp/kente-out/cloths.js into CLOTHS
+python3 -I tools/cut.py . /tmp/kente-out   # then paste /tmp/kente-out/strips.js into CLOTHS
 ```
 
-To use real product data, swap the placeholder names, fill in the meaning line, and point the "Shop" link at each product page.
+The page loads as a single file, so the photos are embedded (about 1 MB in total). To use real product data, swap the placeholder names, fill in the meaning line, and point the "Shop" link at each product page.

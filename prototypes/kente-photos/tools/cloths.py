@@ -1,6 +1,13 @@
-# Block crops per cloth: (photo, [quads TL, TR, BR, BL in photo px, row as it hangs]).
+# Block cuts per cloth: (key, placeholder name, photo, [quads TL, TR, BR, BL in photo px], options).
+# A quad is one woven block as it hangs (a horizontal row), turned 90° clockwise onto the
+# strip; with {'upright': True} the strip already runs top to bottom in the photo.
 # The loom strip is 4.18 strip-widths long; the last block is cut where the strip ends.
 CLOTHS = [
+    ('S', 'Photo sample', 'photo-sample-4.jpg', [
+        [(956, 610), (1244, 610), (1256, 1230), (956, 1230)],
+        [(1550, 592), (1975, 584), (1990, 1240), (1560, 1250)],
+        [(1250, 610), (1550, 600), (1560, 1230), (1256, 1230)],
+    ], {'upright': True}),
     ('A', 'Lattice and Steps', 15, [
         [(205, 118), (632, 122), (612, 455), (207, 460)],
         [(74, 466), (366, 463), (360, 746), (90, 752)],
@@ -49,7 +56,7 @@ CLOTHS = [
         [(42, 324), (293, 322), (293, 523), (47, 528)],
         [(47, 537), (290, 537), (290, 703), (52, 718)],
         [(54, 892), (256, 887), (260, 1038), (57, 1043)],
-    ], {'merge': 16}),
+    ]),
     ('K', 'Lurex Diamonds', 8, [
         [(8, 10), (418, 8), (418, 335), (16, 325)],
         [(22, 333), (418, 346), (418, 625), (27, 617)],
@@ -87,6 +94,7 @@ CLOTHS = [
         [(342, 927), (558, 927), (553, 1163), (342, 1168)],
         [(242, 652), (398, 652), (398, 928), (242, 933)],
         [(402, 652), (598, 652), (588, 923), (402, 928)],
+        [(397, 2), (603, 2), (603, 330), (393, 330)],
     ]),
     ('Q', 'Sunburst', 14, [
         [(52, 32), (323, 37), (323, 283), (67, 278)],
