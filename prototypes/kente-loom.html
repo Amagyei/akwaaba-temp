@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kente Loom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=Inter:wght@400;500;600&family=Cormorant+Garamond:ital,wght@1,500&display=swap">
+<style>
+/* Prototype: kente options shown on a still narrow-strip loom.
+   Tokens mirror akwaaba_theme/public/css/akwaaba.css. */
+:root {
+	--kente-gold: #C9962B;
+	--kente-gold-deep: #A17217;
+	--kente-red: #B8322B;
+	--kente-green: #1B5E20;
+	--kente-black: #0F0F0F;
+	--cream: #F7F1E7;
+	--cream-lighter: #FAF6EF;
+	--charcoal: #1F1B16;
+	--charcoal-soft: #4A413A;
+	--line: rgba(31, 27, 22, 0.12);
+	--font-display: 'Playfair Display', Georgia, serif;
+	--font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+	--font-script: 'Cormorant Garamond', 'Playfair Display', serif;
+	--auto: 6s; /* time each weave stays before rotating to the next */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+	background: var(--cream);
+	color: var(--charcoal);
+	font-family: var(--font-body);
+	-webkit-font-smoothing: antialiased;
+}
+.kente-strip {
+	height: 8px;
+	background: repeating-linear-gradient(90deg,
+		var(--kente-gold) 0 16px, var(--kente-black) 16px 20px,
+		var(--kente-green) 20px 34px, var(--kente-red) 34px 46px,
+		var(--kente-black) 46px 50px, var(--kente-gold) 50px 66px);
+}
+
+/* ---------- layout (mobile-first) ---------- */
+.loom-section {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 2.5rem 16px 3rem;
+	display: grid;
+	gap: 1.75rem;
+	grid-template-areas: "head" "stage" "picker";
+}
+@media (min-width: 900px) {
+	.loom-section {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-areas: "head stage" "picker stage";
+		column-gap: 4rem;
+		row-gap: 2rem;
+		padding: 4.5rem 2rem 4rem;
+	}
+	.loom-head { align-self: end; }
+	.loom-picker { align-self: start; }
+}
+.loom-head { grid-area: head; }
+.eyebrow {
+	font-size: .72rem;
+	font-weight: 600;
+	letter-spacing: .18em;
+	text-transform: uppercase;
+	color: var(--kente-gold-deep);
+}
+.loom-title {
+	font-family: var(--font-display);
+	font-weight: 700;
+	font-size: clamp(2.1rem, 4.6vw, 3.4rem);
+	line-height: 1.05;
+	margin: .6rem 0 1rem;
+}
+.loom-title em { font-weight: 400; color: var(--kente-gold-deep); }
+.loom-sub { margin: 0; max-width: 30rem; line-height: 1.6; color: var(--charcoal-soft); }
+
+/* ---------- stage ---------- */
+.loom-stage {
+	grid-area: stage;
+	position: relative;
+	display: flex;
+	justify-content: center;
+	padding: 4.25rem 12px 12px;
+	border-radius: 24px;
+	background: radial-gradient(120% 80% at 50% 35%, #FCF8F1 0%, #F1E6D3 70%, #E9DCC5 100%);
+	box-shadow: inset 0 0 0 1px var(--line);
+}
+.loom-stage svg { display: block; width: 100%; max-width: 400px; height: auto; max-height: 74vh; }
+.loom-now { position: absolute; top: 16px; left: 20px; right: 72px; }
+.loom-now__label {
+	font-size: .66rem;
+	font-weight: 600;
+	letter-spacing: .16em;
+	text-transform: uppercase;
+	color: var(--charcoal-soft);
+}
+.loom-now__name { font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; }
+.loom-toggle {
+	position: absolute;
+	top: 14px;
+	right: 14px;
+	width: 44px;
+	height: 44px;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	border: 1px solid var(--line);
+	background: var(--cream-lighter);
+	color: var(--charcoal);
+	cursor: pointer;
+}
+.loom-toggle:hover { background: #fff; }
+.loom-toggle .i-play { display: none; }
+.is-user-paused .loom-toggle .i-play { display: block; }
+.is-user-paused .loom-toggle .i-pause { display: none; }
+.warp { transition: opacity .6s ease; }
+
+/* ---------- picker ---------- */
+.loom-picker { grid-area: picker; }
+.weaves { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.weave {
+	position: relative;
+	overflow: hidden;
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 10px 14px 10px 12px;
+	border: 1px solid transparent;
+	border-radius: 14px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	transition: background .2s, border-color .2s, box-shadow .2s;
+}
+.weave:hover { background: rgba(255, 255, 255, .55); }
+.weave[aria-pressed="true"] {
+	background: var(--cream-lighter);
+	border-color: var(--line);
+	box-shadow: 0 10px 24px -18px rgba(31, 27, 22, .5);
+}
+.weave__swatch {
+	flex: none;
+	width: 20px;
+	height: 56px;
+	border-radius: 3px;
+	background-size: 100% auto;
+	background-position: center 20%;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .12);
+}
+.weave__text { display: flex; flex-direction: column; min-width: 0; }
+.weave__name { font-family: var(--font-display); font-weight: 600; font-size: 1.06rem; }
+.weave__meaning {
+	font-family: var(--font-script);
+	font-style: italic;
+	font-weight: 500;
+	font-size: 1.06rem;
+	line-height: 1.25;
+	color: var(--charcoal-soft);
+}
+.weave__progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 2px;
+	background: var(--kente-gold);
+	transform: scaleX(0);
+	transform-origin: left;
+}
+.weave.is-timing .weave__progress { animation: weave-fill var(--auto) linear forwards; }
+.is-still .weave.is-timing .weave__progress { animation-play-state: paused; }
+@keyframes weave-fill { to { transform: scaleX(1); } }
+.loom-cta {
+	display: inline-flex;
+	align-items: center;
+	gap: .5rem;
+	min-height: 44px;
+	margin-top: 1.25rem;
+	padding: 0 1.4rem;
+	border-radius: 999px;
+	background: var(--charcoal);
+	color: var(--cream-lighter);
+	font-size: .92rem;
+	font-weight: 500;
+	text-decoration: none;
+}
+.loom-cta:hover { background: #000; }
+.loom-toggle:focus-visible, .weave:focus-visible, .loom-cta:focus-visible {
+	outline: 2px solid var(--kente-gold-deep);
+	outline-offset: 2px;
+}
+.loom-note {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 0 16px 2.5rem;
+	font-size: .8rem;
+	line-height: 1.5;
+	color: var(--charcoal-soft);
+}
+@media (min-width: 900px) { .loom-note { padding: 0 2rem 3rem; } }
+</style>
+</head>
+<body>
+<div class="kente-strip"></div>
+
+<section class="loom-section" id="loom-section">
+	<div class="loom-head">
+		<div class="eyebrow">Kente · Bonwire</div>
+		<h1 class="loom-title">Choose your<br><em>weave.</em></h1>
+		<p class="loom-sub">Every Kente strip is a sentence: four to six woven sections, each with its own pattern. Pick one to see it on the loom.</p>
+	</div>
+
+	<div class="loom-stage" id="loom-stage">
+		<div class="loom-now">
+			<div class="loom-now__label">On the loom</div>
+			<div class="loom-now__name" id="loom-now"></div>
+		</div>
+		<button type="button" class="loom-toggle" id="loom-toggle" aria-label="Pause rotation">
+			<svg class="i-pause" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
+			<svg class="i-play" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9.5-5.5z" fill="currentColor"/></svg>
+		</button>
+
+		<svg id="loom" viewBox="0 0 400 720" role="img" aria-label="A kente strip on a narrow-strip loom">
+			<defs id="loom-defs">
+				<linearGradient id="woodV" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5E391E"/><stop offset=".45" stop-color="#9C6737"/><stop offset="1" stop-color="#55331B"/></linearGradient>
+				<linearGradient id="woodH" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B7824A"/><stop offset=".55" stop-color="#8A5930"/><stop offset="1" stop-color="#5A3720"/></linearGradient>
+				<linearGradient id="rollWood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4E2F19"/><stop offset=".3" stop-color="#B98650"/><stop offset=".6" stop-color="#8A5930"/><stop offset="1" stop-color="#3F2513"/></linearGradient>
+				<linearGradient id="rollShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A0F06" stop-opacity=".55"/><stop offset=".25" stop-color="#1A0F06" stop-opacity=".08"/><stop offset=".4" stop-color="#FFF" stop-opacity=".22"/><stop offset=".58" stop-color="#FFF" stop-opacity="0"/><stop offset="1" stop-color="#1A0F06" stop-opacity=".65"/></linearGradient>
+				<linearGradient id="edgeShade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1A0F06" stop-opacity=".32"/><stop offset=".07" stop-color="#1A0F06" stop-opacity="0"/><stop offset=".93" stop-color="#1A0F06" stop-opacity="0"/><stop offset="1" stop-color="#1A0F06" stop-opacity=".32"/></linearGradient>
+				<linearGradient id="fellShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A0F06" stop-opacity=".38"/><stop offset="1" stop-color="#1A0F06" stop-opacity="0"/></linearGradient>
+				<linearGradient id="warpFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF" stop-opacity="0"/><stop offset=".28" stop-color="#FFF" stop-opacity="1"/></linearGradient>
+				<mask id="warpMask" maskUnits="userSpaceOnUse" x="0" y="-10" width="400" height="266"><rect x="0" y="-10" width="400" height="266" fill="url(#warpFade)"/></mask>
+				<!-- square at the fell, rounded where the cloth wraps the beam -->
+				<clipPath id="stripClip"><path d="M150 246H250V656Q250 664 242 664H158Q150 664 150 656Z"/></clipPath>
+				<filter id="soft" x="-10%" y="-300%" width="120%" height="700%"><feGaussianBlur stdDeviation="5"/></filter>
+			</defs>
+
+			<ellipse cx="200" cy="706" rx="190" ry="7" fill="#3A2614" opacity=".3" filter="url(#soft)"/>
+			<rect x="28" y="14" width="16" height="684" rx="4" fill="url(#woodV)"/>
+			<rect x="356" y="14" width="16" height="684" rx="4" fill="url(#woodV)"/>
+
+			<!-- warp threads running back to the drag stone -->
+			<g id="warps" mask="url(#warpMask)"></g>
+
+			<!-- heddle cords: pulley → heddles → toe stirrups -->
+			<g fill="none" stroke="#6B4A2E" stroke-width="1.1" stroke-linecap="round">
+				<line x1="191" y1="59" x2="124" y2="76"/>
+				<line x1="209" y1="59" x2="276" y2="76"/>
+				<line x1="124" y1="116" x2="124" y2="124"/>
+				<line x1="276" y1="116" x2="276" y2="124"/>
+				<line x1="124" y1="164" x2="124" y2="668"/>
+				<line x1="276" y1="164" x2="276" y2="668"/>
+			</g>
+			<g id="heddle1"></g>
+			<g id="heddle2"></g>
+
+			<rect x="18" y="26" width="364" height="16" rx="5" fill="url(#woodH)"/>
+			<rect x="195" y="40" width="10" height="10" fill="#5A3720"/>
+			<circle cx="200" cy="58" r="9" fill="url(#woodH)" stroke="#4A2C16" stroke-width="1"/>
+			<circle cx="200" cy="58" r="2.4" fill="#3A2213"/>
+
+			<!-- beater (reed) -->
+			<g fill="none" stroke="#6B4A2E" stroke-width="1.1">
+				<line x1="110" y1="42" x2="110" y2="178"/>
+				<line x1="290" y1="42" x2="290" y2="178"/>
+			</g>
+			<g id="reed"></g>
+			<rect x="104" y="178" width="192" height="9" rx="3" fill="url(#woodH)"/>
+			<rect x="104" y="208" width="192" height="9" rx="3" fill="url(#woodH)"/>
+			<rect x="104" y="178" width="6" height="39" rx="2" fill="#6E4526"/>
+			<rect x="290" y="178" width="6" height="39" rx="2" fill="#6E4526"/>
+
+			<!-- cloth beam -->
+			<rect x="44" y="632" width="42" height="12" rx="3" fill="url(#woodH)"/>
+			<rect x="314" y="632" width="42" height="12" rx="3" fill="url(#woodH)"/>
+			<rect x="84" y="622" width="232" height="32" rx="16" fill="url(#rollWood)"/>
+
+			<!-- the woven strip: one layer per weave -->
+			<g clip-path="url(#stripClip)">
+				<g id="strip"></g>
+				<rect x="150" y="246" width="100" height="418" fill="url(#edgeShade)"/>
+				<rect x="150" y="246" width="100" height="22" fill="url(#fellShade)"/>
+				<rect x="150" y="612" width="100" height="52" fill="url(#rollShade)"/>
+			</g>
+
+			<rect x="18" y="684" width="364" height="14" rx="5" fill="url(#woodH)"/>
+			<circle cx="124" cy="674" r="6" fill="none" stroke="#5A3720" stroke-width="2.5"/>
+			<circle cx="276" cy="674" r="6" fill="none" stroke="#5A3720" stroke-width="2.5"/>
+
+			<!-- shuttle, parked beside the shed -->
+			<g transform="translate(78 232)">
+				<path d="M-25 0C-17-7.5 17-7.5 25 0C17 7.5-17 7.5-25 0Z" fill="url(#woodH)" stroke="#4A2C16" stroke-width=".8"/>
+				<rect id="bobbin" x="-9" y="-2.8" width="18" height="5.6" rx="2.8"/>
+			</g>
+		</svg>
+	</div>
+
+	<div class="loom-picker">
+		<ul class="weaves" id="weaves" aria-label="Choose a weave"></ul>
+		<a class="loom-cta" id="loom-cta" href="#">Shop this weave <span aria-hidden="true">→</span></a>
+	</div>
+</section>
+
+<p class="loom-note">Prototype. The strips here are generated stand-ins. In production each option is one straight, flat photo of the whole strip, fitted to the loom. Swap <code>stripUrl</code> for the product image.</p>
+
+<div class="kente-strip"></div>
+
+<script>
+(() => {
+	const NS = 'http://www.w3.org/2000/svg';
+	const XLINK = 'http://www.w3.org/1999/xlink';
+
+	// Loom geometry, in SVG units. The cloth runs from the fell (where it
+	// leaves the beater) to the bottom of the cloth beam.
+	const STRIP = { x: 150, w: 100, fell: 246, end: 664 };
+	const VIS = STRIP.end - STRIP.fell;
+	const H1 = 76, H2 = 124;
+	const THREADS = 40;
+	const WIPE_MS = 900;
+
+	// ---------- strips (stand-ins for flat photos of the real product) ----------
+	// Drawn 120 wide and scaled to the strip, so every weave fills the loom exactly.
+	const TW = 120;
+	const LEN = VIS * TW / STRIP.w;
+	const C = { gold: '#D6A12E', red: '#B32F28', green: '#1F6B2D', blue: '#1D4C9C', black: '#16120E' };
+	// Yarn colours sampled from the photographed cloth.
+	const K = {
+		olive: '#7F8A45', gold: '#F7B90D', amber: '#F5A20F', orange: '#F29000', deep: '#E07414',
+		flame: '#E04A25', crimson: '#D41F2F', maroon: '#8E2A2C', brown: '#4A2328', pink: '#DE4C86',
+		sky: '#62BEE0', purple: '#6B3E7E', white: '#F2EEE4',
+	};
+
+	// A weft-faced section: edge bands framing one motif.
+	const blk = (edge, ground, motif) => [[edge, 3], [ground, 4], motif, [ground, 4], [edge, 3]];
+
+	// warp: half the lengthwise stripes, mirrored. It is set up once per strip,
+	// so it shows between every section. blocks: the 4–6 patterned sections.
+	const WEAVES = [
+		{
+			name: 'Photo sample', meaning: 'Recreated from your photos · 5 strip designs', weft: K.pink,
+			warp: [[K.gold, 10], [K.orange, 6], [K.olive, 6], [K.gold, 10], [K.crimson, 4], [K.gold, 24]],
+			draw: photoCloth,
+		},
+		{
+			name: 'Sika Futoro', meaning: 'Gold dust · wealth and plenty', weft: C.gold,
+			warp: [[C.black, 3], [C.gold, 14], [C.red, 5], [C.gold, 6], [C.green, 8], [C.gold, 6], [C.black, 2], [C.gold, 16]],
+			blocks: [
+				blk(C.black, C.gold, { m: 'check', h: 26, a: C.gold, b: C.black }),
+				blk(C.red, C.gold, { m: 'zigzag', h: 26, a: C.gold, b: C.green }),
+				blk(C.black, C.gold, { m: 'diamond', h: 26, a: C.green, b: C.gold, c: C.red }),
+				blk(C.red, C.gold, { m: 'bars', h: 26, a: C.gold, b: C.red, c: C.black }),
+				blk(C.black, C.gold, { m: 'steps', h: 26, a: C.gold, b: C.black }),
+			],
+		},
+		{
+			name: 'Oyokoman', meaning: 'Of the Oyoko clan · unity', weft: C.red,
+			warp: [[C.gold, 3], [C.green, 12], [C.red, 4], [C.green, 6], [C.gold, 8], [C.black, 3], [C.red, 6], [C.green, 18]],
+			blocks: [
+				blk(C.green, C.gold, { m: 'zigzag', h: 30, a: C.gold, b: C.red }),
+				blk(C.red, C.gold, { m: 'check', h: 28, a: C.green, b: C.gold }),
+				blk(C.green, C.gold, { m: 'steps', h: 30, a: C.gold, b: C.red }),
+				blk(C.black, C.gold, { m: 'diamond', h: 28, a: C.red, b: C.gold, c: C.green }),
+			],
+		},
+		{
+			name: 'Adwini Asa', meaning: 'My skill is exhausted · the finest work', weft: C.blue,
+			warp: [[C.black, 3], [C.gold, 6], [C.blue, 6], [C.gold, 3], [C.red, 6], [C.gold, 3], [C.green, 6], [C.black, 3], [C.gold, 10], [C.red, 4], [C.gold, 10]],
+			blocks: [
+				blk(C.black, C.gold, { m: 'diamond', h: 24, a: C.blue, b: C.gold, c: C.red }),
+				blk(C.red, C.gold, { m: 'check', h: 22, a: C.red, b: C.black }),
+				blk(C.blue, C.gold, { m: 'steps', h: 24, a: C.gold, b: C.blue }),
+				blk(C.black, C.gold, { m: 'zigzag', h: 24, a: C.gold, b: C.green }),
+				blk(C.green, C.gold, { m: 'bars', h: 24, a: C.gold, b: C.blue, c: C.red }),
+				blk(C.red, C.gold, { m: 'diamond', h: 24, a: C.black, b: C.gold, c: C.green }),
+			],
+		},
+		{
+			name: 'Emaa Da', meaning: 'It has never happened before', weft: C.green,
+			warp: [[C.gold, 4], [C.blue, 16], [C.gold, 3], [C.green, 8], [C.black, 3], [C.blue, 10], [C.gold, 4], [C.blue, 12]],
+			blocks: [
+				blk(C.blue, C.gold, { m: 'steps', h: 26, a: C.gold, b: C.green }),
+				blk(C.green, C.gold, { m: 'check', h: 24, a: C.blue, b: C.gold }),
+				blk(C.blue, C.gold, { m: 'diamond', h: 26, a: C.green, b: C.gold, c: C.blue }),
+				blk(C.black, C.gold, { m: 'zigzag', h: 26, a: C.gold, b: C.blue }),
+				blk(C.blue, C.gold, { m: 'bars', h: 26, a: C.gold, b: C.green, c: C.blue }),
+			],
+		},
+		{
+			name: 'Abusua Ye Dom', meaning: 'The family is a force', weft: C.black,
+			warp: [[C.black, 6], [C.red, 12], [C.gold, 4], [C.black, 4], [C.red, 8], [C.gold, 4], [C.green, 4], [C.red, 18]],
+			blocks: [
+				blk(C.black, C.gold, { m: 'bars', h: 28, a: C.gold, b: C.black, c: C.red }),
+				blk(C.red, C.gold, { m: 'diamond', h: 28, a: C.black, b: C.gold, c: C.red }),
+				blk(C.black, C.gold, { m: 'check', h: 26, a: C.red, b: C.black }),
+				blk(C.red, C.gold, { m: 'zigzag', h: 28, a: C.gold, b: C.black }),
+			],
+		},
+	];
+
+	const band = (y, h, fill) => `<rect y="${y}" width="${TW}" height="${h + .3}" fill="${fill}"/>`;
+	const MOTIFS = {
+		check(y, h, { a, b }) {
+			const cols = 8, rows = 2, cw = TW / cols, ch = h / rows;
+			let s = band(y, h, a);
+			for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+				if ((r + c) % 2) s += `<rect x="${c * cw}" y="${y + r * ch}" width="${cw + .3}" height="${ch + .3}" fill="${b}"/>`;
+			}
+			return s;
+		},
+		zigzag(y, h, { a, b }) {
+			const n = 5, sw = TW / n;
+			let d = `M0 ${y + h}`;
+			for (let i = 0; i < n; i++) d += `L${i * sw + sw / 2} ${y + 4}L${(i + 1) * sw} ${y + h}`;
+			return band(y, h, a) + `<path d="${d}Z" fill="${b}"/>` + band(y, 2, b);
+		},
+		diamond(y, h, { a, b, c }) {
+			const n = 4, cw = TW / n, cy = y + h / 2, rx = cw / 2 - 1.5, ry = h / 2 - 2;
+			let s = band(y, h, a);
+			for (let i = 0; i < n; i++) {
+				const cx = (i + .5) * cw;
+				s += `<path d="M${cx} ${cy - ry}L${cx + rx} ${cy}L${cx} ${cy + ry}L${cx - rx} ${cy}Z" fill="${b}"/>`;
+				s += `<path d="M${cx} ${cy - ry * .45}L${cx + rx * .45} ${cy}L${cx} ${cy + ry * .45}L${cx - rx * .45} ${cy}Z" fill="${c}"/>`;
+			}
+			return s;
+		},
+		steps(y, h, { a, b }) {
+			const hs = [.4, .7, 1, 1, .7, .4], cw = TW / hs.length;
+			let s = band(y, h, a);
+			hs.forEach((k, i) => {
+				const hh = (h - 6) * k;
+				s += `<rect x="${i * cw + 1.5}" y="${y + (h - hh) / 2}" width="${cw - 3}" height="${hh}" fill="${b}"/>`;
+			});
+			return s;
+		},
+		bars(y, h, { a, b, c }) {
+			let s = band(y, h, a);
+			for (let x = 4; x < TW; x += 12) s += `<rect x="${x}" y="${y + 3}" width="5" height="${h - 6}" fill="${b}"/>`;
+			return s + `<rect y="${y + h / 2 - 1.5}" width="${TW}" height="3" fill="${c}"/>`;
+		},
+	};
+
+	// Vertical ribs where the warp shows, horizontal ribs in the weft-faced sections.
+	// tr: the brick-like weft ribs in the photo. lm/ls/lt: yarn with metallic lurex flecks.
+	const lurex = (id, ground) => `<pattern id="${id}" width="9" height="5" patternUnits="userSpaceOnUse">`
+		+ `<rect width="9" height="5" fill="${ground}"/><rect x="1" y="1" width="1.8" height=".7" fill="#ECEAE3" fill-opacity=".85"/>`
+		+ '<rect x="5.5" y="3.2" width="1.8" height=".7" fill="#ECEAE3" fill-opacity=".85"/></pattern>';
+	const TEX = '<defs>'
+		+ '<pattern id="tv" width="3" height="4" patternUnits="userSpaceOnUse"><rect width=".8" height="4" fill="#000" fill-opacity=".16"/><rect x="1.5" width=".5" height="4" fill="#fff" fill-opacity=".08"/></pattern>'
+		+ '<pattern id="th" width="4" height="2.4" patternUnits="userSpaceOnUse"><rect width="4" height=".8" fill="#000" fill-opacity=".16"/><rect y="1.2" width="4" height=".5" fill="#fff" fill-opacity=".08"/></pattern>'
+		+ '<pattern id="tr" width="2.4" height="2.6" patternUnits="userSpaceOnUse"><rect width=".6" height="1.2" fill="#000" fill-opacity=".14"/><rect x="1.2" y="1.3" width=".6" height="1.2" fill="#000" fill-opacity=".14"/></pattern>'
+		+ lurex('lm', K.maroon) + lurex('ls', '#3E3A3A') + lurex('lt', '#4F9B72')
+		+ '</defs>';
+
+	// ---------- the photographed cloth ----------
+	// The cloth is many 4-inch strips sewn side by side, in five designs. The loom
+	// carries one block from each design, top to bottom, at its real proportions.
+	const rect = (x, y, w, h, fill) => `<rect x="${x}" y="${y}" width="${w + .3}" height="${h + .3}" fill="${fill}"/>`;
+	const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+	// Stepped diamond on an odd cols × rows grid: pick(d, c, r) colours each cell
+	// by its stepped distance d from the centre cell (c, r are offsets from it).
+	function grid(y0, h, cols, rows, pick) {
+		const cw = TW / cols, ch = h / rows, mc = (cols - 1) / 2, mr = (rows - 1) / 2;
+		let s = '';
+		for (let r = 0; r < rows; r++) {
+			let run = null, start = 0;
+			for (let c = 0; c <= cols; c++) {
+				const fill = c < cols ? pick(Math.abs(c - mc) + Math.abs(r - mr), c - mc, r - mr) : null;
+				if (fill === run) continue;
+				if (run) s += rect(start * cw, y0 + r * ch, (c - start) * cw, ch, run);
+				run = fill;
+				start = c;
+			}
+		}
+		return s;
+	}
+
+	// Bands zigzagging between the selvages: colors[0] fills the left, and each
+	// later colour starts offsets[k] to the right of the zigzag line.
+	function zigzag(y0, h, { period, center, amp, phase = 0, colors, offsets }) {
+		const n = Math.ceil(h), line = [];
+		for (let i = 0; i <= n; i++) {
+			const y = h * i / n, p = ((y / period + phase) % 1 + 1) % 1;
+			line.push([center + amp * (p < .5 ? 4 * p - 1 : 3 - 4 * p), y0 + y]);
+		}
+		let s = rect(0, y0, TW, h, colors[0]);
+		offsets.forEach((off, k) => {
+			const pts = line.map(([x, y]) => `${clamp(x + off, -1, TW).toFixed(2)},${y.toFixed(2)}`).join(' ');
+			s += `<polygon points="${pts} ${TW},${y0 + h} ${TW},${y0}" fill="${colors[k + 1]}"/>`;
+		});
+		return s;
+	}
+
+	function bands(y0, h, list) {
+		const total = list.reduce((s, b) => s + b[1], 0);
+		let s = '', y = y0;
+		for (const [fill, weight] of list) { const bh = h * weight / total; s += rect(0, y, TW, bh, fill); y += bh; }
+		return s;
+	}
+
+	function photoCloth() {
+		const SEP = 1.4;
+		const blocks = [
+			// orange diamond with purple cross, sky and crimson steps
+			[66, (y, h) => grid(y, h, 21, 17, (d, c, r) => {
+				if ((r === 0 && Math.abs(c) <= 2) || (c === 0 && Math.abs(r) <= 1)) return K.purple;
+				if (d <= 7) return K.orange;
+				if (d <= 9) return c <= 0 ? K.sky : K.crimson;
+				return d <= 11 ? K.purple : K.gold;
+			})],
+			// pink zigzag edged in gold on olive
+			[56, (y, h) => zigzag(y, h, { period: 30, center: 70, amp: 34, phase: .25,
+				colors: [K.olive, K.gold, K.pink, K.gold, K.olive], offsets: [-28, 0, 20, 44] })],
+			// crimson diamond, dark centre, black-and-silver steps in the corners
+			[97, (y, h) => grid(y, h, 21, 23, (d, c, r) => {
+				if ((r === 0 && Math.abs(c) <= 2) || (Math.abs(r) === 1 && Math.abs(c) <= 1)) return K.brown;
+				if (d <= 7) return K.orange;
+				if (d <= 10) return K.crimson;
+				return d >= 14 && d <= 15 ? 'url(#ls)' : K.amber;
+			})],
+			// big zigzag: flame, sky, orange and purple onto gold
+			[84, (y, h) => zigzag(y, h, { period: 30, center: 36, amp: 30,
+				colors: [K.flame, K.sky, K.orange, K.purple, K.gold], offsets: [0, 13, 31, 44] })],
+			// rose diamond with teal-and-silver steps
+			[88, (y, h) => grid(y, h, 21, 27, (d, c, r) => {
+				if ((r === 0 && Math.abs(c) <= 2) || (c === 0 && Math.abs(r) <= 1)) return K.brown;
+				if (d <= 6) return K.orange;
+				if (d <= 10) return K.crimson;
+				return d >= 13 && d <= 14 ? 'url(#lt)' : K.amber;
+			})],
+			// gold squares in an X on olive
+			[60, (y, h) => grid(y, h, 5, 5, (d, c, r) => Math.abs(c) === Math.abs(r) ? K.gold : K.olive)],
+			// orange and maroon weft stripes with lurex (fills the rest, onto the beam)
+			[0, (y, h) => bands(y, h, [[K.deep, 5], ['url(#lm)', 6], [K.deep, 4], [K.brown, .8], [K.maroon, 6],
+				[K.deep, 2], [K.maroon, 5], [K.deep, 2], ['url(#lm)', 5], [K.deep, 5]])],
+		];
+		const fixed = blocks.reduce((s, [h]) => s + h, 0) + SEP * (blocks.length - 1);
+		let s = '', y = 0;
+		blocks.forEach(([h, draw], i) => {
+			if (i) { s += rect(0, y, TW, SEP, K.white); y += SEP; }
+			const bh = h || LEN - fixed;
+			s += draw(y, bh);
+			y += bh;
+		});
+		return s + `<rect width="${TW}" height="${LEN}" fill="url(#tr)"/>`;
+	}
+
+	const mirror = half => half.concat(half.slice().reverse());
+	const blockH = blk => blk.reduce((s, b) => s + (Array.isArray(b) ? b[1] : b.h), 0);
+
+	function colorAt(stripes, x) {
+		let acc = 0;
+		for (const [c, w] of stripes) { acc += w; if (x < acc) return c; }
+		return stripes[stripes.length - 1][0];
+	}
+
+	// Warp stripes, then each section, with stripes between and at both ends.
+	function stripMarkup(w) {
+		const gap = (LEN - w.blocks.reduce((s, b) => s + blockH(b), 0)) / (w.blocks.length + 1);
+		let s = '', y = 0;
+		const stripes = () => {
+			let x = 0;
+			for (const [c, sw] of w.fullWarp) { s += `<rect x="${x}" y="${y}" width="${sw + .3}" height="${gap + .3}" fill="${c}"/>`; x += sw; }
+			s += `<rect y="${y}" width="${TW}" height="${gap}" fill="url(#tv)"/>`;
+			y += gap;
+		};
+		stripes();
+		for (const blk of w.blocks) {
+			const y0 = y;
+			for (const b of blk) {
+				if (Array.isArray(b)) { s += band(y, b[1], b[0]); y += b[1]; }
+				else { s += MOTIFS[b.m](y, b.h, b); y += b.h; }
+			}
+			s += `<rect y="${y0}" width="${TW}" height="${y - y0}" fill="url(#th)"/>`;
+			stripes();
+		}
+		return s;
+	}
+
+	for (const w of WEAVES) {
+		w.fullWarp = mirror(w.warp);
+		w.stripUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+			`<svg xmlns="http://www.w3.org/2000/svg" width="${TW}" height="${LEN}" viewBox="0 0 ${TW} ${LEN}">${TEX}${w.draw ? w.draw() : stripMarkup(w)}</svg>`);
+	}
+
+	// ---------- build the loom's dynamic parts ----------
+	const $ = id => document.getElementById(id);
+	function el(tag, attrs) {
+		const n = document.createElementNS(NS, tag);
+		for (const k in attrs) n.setAttribute(k, attrs[k]);
+		return n;
+	}
+
+	const pitch = STRIP.w / THREADS;
+	const xFell = k => STRIP.x + pitch / 2 + k * pitch;
+	const xTop = k => 200 + (xFell(k) - 200) * .8;                  // warp converges toward the drag stone
+	const xAt = (k, y) => xTop(k) + (xFell(k) - xTop(k)) * (y + 10) / (STRIP.fell + 10);
+
+	const warps = $('warps');
+	WEAVES.forEach((w, i) => {
+		const g = el('g', { class: 'warp' });
+		g.style.opacity = i === 0 ? 1 : 0;
+		for (let k = 0; k < THREADS; k++) {
+			g.append(el('line', {
+				x1: xTop(k), y1: -10, x2: xFell(k), y2: STRIP.fell,
+				stroke: colorAt(w.fullWarp, (pitch / 2 + k * pitch) * TW / STRIP.w), 'stroke-width': 1.6,
+			}));
+		}
+		warps.append(g);
+		w.warpG = g;
+	});
+
+	function buildHeddle(g, base) {
+		const strings = el('g', { stroke: '#F5EEDF', 'stroke-opacity': .75, 'stroke-width': .5 });
+		for (let k = 0; k < THREADS; k++) {
+			strings.append(el('line', { x1: xAt(k, base + 6), y1: base + 6, x2: xAt(k, base + 34), y2: base + 34 }));
+		}
+		g.append(strings,
+			el('rect', { x: 116, y: base, width: 168, height: 6, rx: 3, fill: 'url(#woodH)' }),
+			el('rect', { x: 116, y: base + 34, width: 168, height: 6, rx: 3, fill: 'url(#woodH)' }));
+	}
+	buildHeddle($('heddle1'), H1);
+	buildHeddle($('heddle2'), H2);
+
+	const reed = $('reed');
+	for (let x = 111; x < 290; x += 2.6) {
+		reed.append(el('line', { x1: x, y1: 187, x2: x, y2: 208, stroke: '#2E1C0E', 'stroke-opacity': .45, 'stroke-width': .6 }));
+	}
+
+	// One cloth layer per weave, each with its own reveal clip for the switch.
+	const defs = $('loom-defs'), strip = $('strip');
+	WEAVES.forEach((w, i) => {
+		const rect = el('rect', { x: STRIP.x, y: STRIP.fell, width: STRIP.w, height: 0 });
+		const clip = el('clipPath', { id: 'reveal' + i });
+		clip.append(rect);
+		defs.append(clip);
+		const outer = el('g', { 'clip-path': `url(#reveal${i})` });
+		outer.style.display = 'none';
+		const img = el('image', { x: STRIP.x, y: STRIP.fell, width: STRIP.w, height: VIS, preserveAspectRatio: 'none' });
+		img.setAttribute('href', w.stripUrl);
+		img.setAttributeNS(XLINK, 'xlink:href', w.stripUrl);
+		outer.append(img);
+		strip.append(outer);
+		w.layer = { outer, rect };
+	});
+
+	// ---------- picker ----------
+	const section = $('loom-section'), toggle = $('loom-toggle');
+	const nowName = $('loom-now'), cta = $('loom-cta'), bobbin = $('bobbin');
+
+	const chips = WEAVES.map((w, i) => {
+		const li = document.createElement('li');
+		const b = document.createElement('button');
+		b.type = 'button';
+		b.className = 'weave';
+		b.innerHTML = '<span class="weave__swatch"></span><span class="weave__text"><span class="weave__name"></span>'
+			+ '<span class="weave__meaning"></span></span><span class="weave__progress"></span>';
+		b.querySelector('.weave__swatch').style.backgroundImage = `url("${w.stripUrl}")`;
+		b.querySelector('.weave__name').textContent = w.name;
+		b.querySelector('.weave__meaning').textContent = w.meaning;
+		b.addEventListener('click', () => select(i));
+		b.querySelector('.weave__progress').addEventListener('animationend', () => {
+			if (i === target) select((i + 1) % WEAVES.length);
+		});
+		li.append(b);
+		$('weaves').append(li);
+		return b;
+	});
+
+	// ---------- state ----------
+	const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+	let paused = reduce.matches, inView = true, target = 0, seq = 0;
+	const shown = new Set();
+
+	function syncState() {
+		section.classList.toggle('is-user-paused', paused);
+		section.classList.toggle('is-still', paused || !inView);
+		toggle.setAttribute('aria-label', paused ? 'Play rotation' : 'Pause rotation');
+	}
+
+	function applyUI(i) {
+		const w = WEAVES[i];
+		chips.forEach((c, k) => { c.setAttribute('aria-pressed', String(k === i)); c.classList.remove('is-timing'); });
+		WEAVES.forEach((x, k) => { x.warpG.style.opacity = k === i ? 1 : 0; });
+		bobbin.setAttribute('fill', w.weft);
+		nowName.textContent = w.name;
+		cta.firstChild.textContent = `Shop ${w.name} `;
+	}
+
+	function startTimer() {
+		chips.forEach(c => c.classList.remove('is-timing'));
+		const c = chips[target];
+		void c.offsetWidth; // restart the progress animation
+		c.classList.add('is-timing');
+	}
+
+	function settle(L) {
+		for (const o of shown) {
+			if (o === L) continue;
+			o.outer.style.display = 'none';
+			shown.delete(o);
+		}
+		startTimer();
+	}
+
+	const ease = t => t < .5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+
+	// The cloth never moves. A new weave is revealed once, top-down from the
+	// fell (a crossfade under reduced motion), then holds still.
+	function select(i) {
+		if (i === target) return;
+		target = i;
+		applyUI(i);
+		const L = WEAVES[i].layer, token = ++seq;
+		L.outer.style.display = '';
+		L.outer.style.transition = 'none';
+		L.outer.style.opacity = 1;
+		strip.append(L.outer); // on top of whatever is on the loom now
+		shown.add(L);
+
+		if (reduce.matches) {
+			L.rect.setAttribute('height', VIS);
+			L.outer.style.opacity = 0;
+			L.outer.getBoundingClientRect();
+			L.outer.style.transition = 'opacity .5s ease';
+			L.outer.style.opacity = 1;
+			setTimeout(() => { if (token === seq) settle(L); }, 550);
+			return;
+		}
+		L.rect.setAttribute('height', 0);
+		const t0 = performance.now();
+		const step = now => {
+			if (token !== seq) return;
+			const t = Math.min(1, (now - t0) / WIPE_MS);
+			L.rect.setAttribute('height', VIS * ease(t));
+			if (t < 1) requestAnimationFrame(step);
+			else settle(L);
+		};
+		requestAnimationFrame(step);
+	}
+
+	toggle.addEventListener('click', () => { paused = !paused; syncState(); });
+	new IntersectionObserver(([e]) => { inView = e.isIntersecting; syncState(); }).observe($('loom-stage'));
+
+	const L0 = WEAVES[0].layer;
+	L0.outer.style.display = '';
+	L0.rect.setAttribute('height', VIS);
+	shown.add(L0);
+	applyUI(0);
+	syncState();
+	startTimer();
+})();
+</script>
+</body>
+</html>
