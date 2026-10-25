@@ -7,34 +7,39 @@ Source photos for `../kente-loom.html`, a static loom prototype that rotates bet
 
 Each cloth is many ~4-inch weft-faced strips sewn side by side. In these photos the cloths hang over a stand, so each **horizontal row is one strip**. Thin white lines split a row into blocks, and stitched seams separate the rows. To put a block on the loom, rotate it 90° clockwise so the strip runs top to bottom.
 
-## Which photos show which cloth (first pass, needs checking)
+## Cloths on the loom
 
-| Cloth | Best photo | Also in | Look |
+All 15 cloths below are recreated in the page, after the hand-drawn "Photo sample". The names are placeholders. Photos 05, 06 (right) and 07 show the same blue stole, so the earlier "I" group is merged into H.
+
+| Cloth | Placeholder name | Photo used | Also in |
 |---|---|---|---|
-| A | 15 | 01 left, 02 left, 04 left | multicolour: green zigzag, blue/magenta lattice, chevrons, magenta/green "tree" motifs |
-| C | 19 | 02 right | purple/red top, grey/blue/orange steps, zigzags, cream/red cross, orange/black checks |
-| D | 01 right | none | black/olive blocks, yellow/black/blue chevrons, stripes (only seen once) |
-| E | 20 | 03 left | dark green lurex with pink/grey/red triangles |
-| F | 18 | 03 right | brown lurex with blue/orange triangles, diamonds, cream/brown checks |
-| G | 17 | 04 right | yellow zigzag, yellow "tree" motif, orange stripes with leaves |
-| H | 07 | 05 left (?) | blue stole: gold/white zigzag, orange oval, cream/black steps, orange stripes |
-| I | 05 right | none | blue with arrows/stars (may be the same as 06 right) |
-| J | 06 left | none | green top with a cross, cream with crosses, blue blocks |
-| K | 08 | none | blue/red/gold lurex diamonds and lattice |
-| L | 09 | none | red/pink: pink/gold zigzag, gold lurex diamond |
-| M | 10 | none | turquoise/green with triangles and X motifs |
-| N | 11 | none | navy/peach/sky with gold-silver steps |
-| O | 12 | none | orange/pink lurex with diamonds and chevrons |
-| P | 13 | none | gold/green/maroon (classic): stripes, stepped diamond, zigzag |
-| Q | 14 | 16 (?) | yellow/orange: green zigzag, red/yellow diamond, pink/green diamond |
+| A | Lattice and Steps | 15 | 01 left, 02 left, 04 left |
+| C | Silver Steps | 19 | 02 right |
+| D | Black and Gold | 01 right | none |
+| E | Emerald Triangles | 20 | 03 left |
+| F | Bronze Checks | 18 | 03 right |
+| G | Golden Trees | 17 | 04 right |
+| H | Royal Blue Stole | 07 | 05, 06 right |
+| J | Green Cross | 06 left | none |
+| K | Lurex Diamonds | 08 | none |
+| L | Rose Garden | 09 | none |
+| M | Turquoise Field | 10 | none |
+| N | Midnight Arrows | 11 | none |
+| O | Coral Lurex | 12 | none |
+| P | Classic Gold | 13 | none |
+| Q | Sunburst | 14 | 16 |
 
 The owner also has 6 videos that could not be copied here, because macOS blocks access to their Downloads folder.
 
-## Plan
+## How the strips were made (`tools/`)
 
-1. For each cloth, crop 3–4 distinctive blocks from its best photo and rotate each 90° clockwise. Stack them to fill the loom strip (about 4.2 strip-widths long), with a thin white line between blocks.
-2. Turn each block into a woven-looking grid of about 24 cells across: average each cell's colour, map it to a palette of about 8 colours per cloth with saturation lifted slightly, and clean up isolated single-cell speckles. Mark metallic (lurex) colours so they get silver flecks.
-3. Embed each cloth as compact data in the page: a palette plus rows of palette indices, drawn as run-length rects. The preview loads the page as a data: URL, so external files won't load.
-4. Remove the generated stand-ins (Sika Futoro, Oyokoman, Adwini Asa, Emaa Da, Abusua Ye Dom) and their block code.
-5. With about 15 cloths, change the picker from a list to a grid of small strip swatches. Show the active name above it with the auto-rotate progress bar.
-6. Compare each recreation against its photo.
+1. `cloths.py` lists 3–6 block crops per cloth, as four corner points in the photo. The last block is cut off where the strip ends (4.18 strip-widths).
+2. `build.py` straightens each crop, turns it 90° clockwise, and reads it as a grid 40 cells across. The colours come from per-pixel k-means clustering in Lab space, with near-duplicate colours merged and saturation lifted slightly. Each cell takes its majority colour, and isolated or mottled cells are cleaned up. It also writes preview PNGs that show each photo crop beside its recreation.
+3. `assemble.py` marks lurex colours (picked by eye) and merges colours that were only split by uneven light. It then run-length encodes the grids into the `CLOTHS` array in the page.
+
+```
+python3 -I tools/build.py . /tmp/kente-out
+python3 -I tools/assemble.py /tmp/kente-out   # then paste /tmp/kente-out/cloths.js into CLOTHS
+```
+
+To use real product data, swap the placeholder names, fill in the meaning line, and point the "Shop" link at each product page.

@@ -123,62 +123,61 @@ body {
 
 /* ---------- picker ---------- */
 .loom-picker { grid-area: picker; }
-.weaves { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.weave {
-	position: relative;
-	overflow: hidden;
-	width: 100%;
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	padding: 10px 14px 10px 12px;
-	border: 1px solid transparent;
-	border-radius: 14px;
-	background: transparent;
-	color: inherit;
-	font: inherit;
-	text-align: left;
-	cursor: pointer;
-	transition: background .2s, border-color .2s, box-shadow .2s;
-}
-.weave:hover { background: rgba(255, 255, 255, .55); }
-.weave[aria-pressed="true"] {
-	background: var(--cream-lighter);
-	border-color: var(--line);
-	box-shadow: 0 10px 24px -18px rgba(31, 27, 22, .5);
-}
-.weave__swatch {
-	flex: none;
-	width: 20px;
-	height: 56px;
-	border-radius: 3px;
-	background-size: 100% auto;
-	background-position: center 20%;
-	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .12);
-}
-.weave__text { display: flex; flex-direction: column; min-width: 0; }
-.weave__name { font-family: var(--font-display); font-weight: 600; font-size: 1.06rem; }
-.weave__meaning {
+.weave-now__name { font-family: var(--font-display); font-weight: 600; font-size: 1.5rem; line-height: 1.2; }
+.weave-now__meaning {
 	font-family: var(--font-script);
 	font-style: italic;
 	font-weight: 500;
-	font-size: 1.06rem;
+	font-size: 1.1rem;
 	line-height: 1.25;
 	color: var(--charcoal-soft);
 }
-.weave__progress {
-	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: 0;
+.weave-now__meaning:empty { display: none; }
+.weave-bar {
+	position: relative;
+	overflow: hidden;
 	height: 2px;
+	margin: .8rem 0 1.1rem;
+	background: var(--line);
+}
+.weave-bar__fill {
+	position: absolute;
+	inset: 0;
 	background: var(--kente-gold);
 	transform: scaleX(0);
 	transform-origin: left;
 }
-.weave.is-timing .weave__progress { animation: weave-fill var(--auto) linear forwards; }
-.is-still .weave.is-timing .weave__progress { animation-play-state: paused; }
+.weave-bar.is-timing .weave-bar__fill { animation: weave-fill var(--auto) linear forwards; }
+.is-still .weave-bar.is-timing .weave-bar__fill { animation-play-state: paused; }
 @keyframes weave-fill { to { transform: scaleX(1); } }
+/* one small strip per cloth, showing the top of each */
+.weaves {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(8, minmax(0, 1fr));
+	gap: 10px;
+}
+.weave {
+	display: block;
+	width: 100%;
+	aspect-ratio: 1 / 2.4;
+	padding: 0;
+	border: 0;
+	border-radius: 4px;
+	background-color: var(--cream-lighter);
+	background-size: 100% auto;
+	background-position: center top;
+	cursor: pointer;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .15);
+	transition: transform .2s, box-shadow .2s;
+}
+.weave:hover { transform: translateY(-2px); }
+.weave[aria-pressed="true"] {
+	box-shadow: 0 0 0 2px var(--cream), 0 0 0 4px var(--charcoal), 0 10px 18px -10px rgba(31, 27, 22, .6);
+}
+@media (prefers-reduced-motion: reduce) { .weave { transition: none; } .weave:hover { transform: none; } }
 .loom-cta {
 	display: inline-flex;
 	align-items: center;
@@ -305,12 +304,17 @@ body {
 	</div>
 
 	<div class="loom-picker">
+		<div class="weave-now" aria-live="polite">
+			<div class="weave-now__name" id="weave-name"></div>
+			<div class="weave-now__meaning" id="weave-meaning"></div>
+		</div>
+		<div class="weave-bar" id="weave-bar"><span class="weave-bar__fill"></span></div>
 		<ul class="weaves" id="weaves" aria-label="Choose a weave"></ul>
 		<a class="loom-cta" id="loom-cta" href="#">Shop this weave <span aria-hidden="true">→</span></a>
 	</div>
 </section>
 
-<p class="loom-note">Prototype. The strips here are generated stand-ins. In production each option is one straight, flat photo of the whole strip, fitted to the loom. Swap <code>stripUrl</code> for the product image.</p>
+<p class="loom-note">Prototype. Each strip is recreated from the owner's photos of the cloth, and the names are placeholders. In production each option can be one straight, flat photo of the whole strip, fitted to the loom. Swap <code>stripUrl</code> for the product image.</p>
 
 <div class="kente-strip"></div>
 
@@ -327,11 +331,10 @@ body {
 	const THREADS = 40;
 	const WIPE_MS = 900;
 
-	// ---------- strips (stand-ins for flat photos of the real product) ----------
+	// ---------- strips ----------
 	// Drawn 120 wide and scaled to the strip, so every weave fills the loom exactly.
 	const TW = 120;
 	const LEN = VIS * TW / STRIP.w;
-	const C = { gold: '#D6A12E', red: '#B32F28', green: '#1F6B2D', blue: '#1D4C9C', black: '#16120E' };
 	// Yarn colours sampled from the photographed cloth.
 	const K = {
 		olive: '#7F8A45', gold: '#F7B90D', amber: '#F5A20F', orange: '#F29000', deep: '#E07414',
@@ -339,114 +342,122 @@ body {
 		sky: '#62BEE0', purple: '#6B3E7E', white: '#F2EEE4',
 	};
 
-	// A weft-faced section: edge bands framing one motif.
-	const blk = (edge, ground, motif) => [[edge, 3], [ground, 4], motif, [ground, 4], [edge, 3]];
-
-	// warp: half the lengthwise stripes, mirrored. It is set up once per strip,
-	// so it shows between every section. blocks: the 4–6 patterned sections.
-	const WEAVES = [
-		{
-			name: 'Photo sample', meaning: 'Recreated from your photos · 5 strip designs', weft: K.pink,
-			warp: [[K.gold, 10], [K.orange, 6], [K.olive, 6], [K.gold, 10], [K.crimson, 4], [K.gold, 24]],
-			draw: photoCloth,
-		},
-		{
-			name: 'Sika Futoro', meaning: 'Gold dust · wealth and plenty', weft: C.gold,
-			warp: [[C.black, 3], [C.gold, 14], [C.red, 5], [C.gold, 6], [C.green, 8], [C.gold, 6], [C.black, 2], [C.gold, 16]],
+	// Cloths recreated from the owner's photos (prototypes/kente-photos/cloth-photo-NN.jpg).
+	// Each block is one woven section from a photo, turned to run down the strip at its
+	// real proportions: CELLS cells across, row by row, run-length coded as a palette
+	// letter plus a repeat count. lurex: the palette letters woven with metallic yarn.
+	// Names are placeholders until the shop's names and proverbs are in.
+	const CELLS = 40;
+	const LETTERS = 'abcdefghijklmnop';
+	const CLOTHS = [
+		{ name: 'Lattice and Steps', photo: 15, pal: 'AC5E13 15205C 851A1B 2B4120 9E593D 2E2136 701F4D 8DA255 400D1A D6B830 857729 1B622F', lurex: 'b',
 			blocks: [
-				blk(C.black, C.gold, { m: 'check', h: 26, a: C.gold, b: C.black }),
-				blk(C.red, C.gold, { m: 'zigzag', h: 26, a: C.gold, b: C.green }),
-				blk(C.black, C.gold, { m: 'diamond', h: 26, a: C.green, b: C.gold, c: C.red }),
-				blk(C.red, C.gold, { m: 'bars', h: 26, a: C.gold, b: C.red, c: C.black }),
-				blk(C.black, C.gold, { m: 'steps', h: 26, a: C.gold, b: C.black }),
-			],
-		},
-		{
-			name: 'Oyokoman', meaning: 'Of the Oyoko clan · unity', weft: C.red,
-			warp: [[C.gold, 3], [C.green, 12], [C.red, 4], [C.green, 6], [C.gold, 8], [C.black, 3], [C.red, 6], [C.green, 18]],
+				'g12h15e13g11h17e12g9h20e11g4h2e24b10h9e19b12h12e13b15h13e9b18e16b8g16e13b12g15e11b18g11e8b22g10b9g22h9b10g18h12b13g12h15b14g8k2h16g16h6e18g13h12e15g10h18e12g7e2h20e11h7e23b10h10e18b12h13e12b15eh13e7g2b17e16b7g17e13b13g14e9b21g10e7b23g3hg2h3lb10g20h9lb11g16h12lb14g11h14lg2b13g7h6e11dg16h9e14dg12h15e12dg9h19e11dh7e25b8h9e21b10h12e14b14e2h11e10b17e17b7g16e14b11g15e10b19g11b3e4b23g10b9g22h9b10g19h11b13g13h14g7b7g9k2h15g16h6e18g12kh11e16g11k2h13e14',
+				'j2c13l9a8j6a2j4c11l9a4j2aj6a3j15c6l19j15c7l18j11c15l14j11c15l14j10c16l14j8c19d2l11f6j5c19l10f6j22c12f10j16c14f10ij15c14f11j15c14f15j6c19a10f5j6c19a13f8j19a11f11jfj16a11f15j14a11f15j14a9if16j14l6a2i2f11i2f2i2f2j11l6a24f2j2f2j3fl10a20f10l10ka15f14l11a15f14l13a13f14c2d10l2d2a6f2i3fif11c15dl6i10f5i3c15l8a17c11l15a14c11l15a14c11l15a14c9l18a13j7c2d2l20j3a6j7c23l10j11c19l10j11c15l14j11c15l14j13c13l14',
+				'k14i6a6b14k14i6a6b14k14i6a6b14k14i6a7b13k11i9a10b10k11i9a10b10k10i10da10b9k7i9d9a9b6k7i9d9a9b6k6i6d17a6e2f3i12d17a11i15d14a11i16d9a15i16d9a15i2f2bf2i10d8a15b6fi14a13k4a2b7f4i10a12k7b10fi9a13k7b12i9a8k11b14i7a8k11b14i7a4k15b14i7a4k15b11i10a5k14b11i10a8k11b8f2i7f3d2a8k10b7fi8d9a5k10b7i9d9a8k7i12d13a8k7i12d17a5k6i13d17a10i16d14a10i16d9a15k3i13d9a15k7i14d4a15k7i14a11b4e4k11i10a11b8k11i10a9eb9k12i8a8b12k14i6a6eb13k14i6a4b16k14i6a3b17',
+				'a5d12c11j5a7da4d12c11aj4a7d2a3d12c11aj4a6jd2a3d12c12j4a6jda4d12c12j3a7ja6d16c8a9ja11d12c11a5ja11d12c11a17d12c11a17d12c11a8e3a7d12c11a5d2f4a11d12c11d2f4a11d12c11d2f4a11d12c11d2f4a11d12c11d2f5a10d13c12f6e2f2a10d8c12f10a11d12c4ic2f10a11d12c4ic2f10a11d12c4ic2f10a11d12ic3ic2k4f7e4a7d12ci3c2a3k2f11a11d11c2a2jkf12a11d11c2a2jkf12a12d10c2a3kf12a12d10c2a4k6f7ea10d10c2a9kf12a11d5c2a9kf12a11d5c2a9kf12a11d5c2a9kf12a11d5c4a8k2f11a11d4c6a5j6f13a10c6a4j7f13a10c6a4j7f13a11c5a4j7f13a10c6a5j7f12a10c9a2j8f14a7',
+			] },
+		{ name: 'Silver Steps', photo: 19, pal: '5D5A58 134623 AE9A2F CFB223 8C1B1E 1D1E4A 311424 6D1016 917F20 BD4223 92540D 421C53', lurex: 'a',
 			blocks: [
-				blk(C.green, C.gold, { m: 'zigzag', h: 30, a: C.gold, b: C.red }),
-				blk(C.red, C.gold, { m: 'check', h: 28, a: C.green, b: C.gold }),
-				blk(C.green, C.gold, { m: 'steps', h: 30, a: C.gold, b: C.red }),
-				blk(C.black, C.gold, { m: 'diamond', h: 28, a: C.red, b: C.gold, c: C.green }),
-			],
-		},
-		{
-			name: 'Adwini Asa', meaning: 'My skill is exhausted · the finest work', weft: C.blue,
-			warp: [[C.black, 3], [C.gold, 6], [C.blue, 6], [C.gold, 3], [C.red, 6], [C.gold, 3], [C.green, 6], [C.black, 3], [C.gold, 10], [C.red, 4], [C.gold, 10]],
+				'h9g12d6b13h11g11d7b11h13g11d9b7h12g11cd10b6eh8g10c5d4c2b10e2h4g8i2c9b15e2h4g9ic9b15e4h6g10c9b11e9h5g10c9b7e9h5g10c10b6e8h3g9d4c6b10e4h4g7c2d7cb15e5hg9c2d7b16e8h2g9d8b13e12h2g9d8b9e12h2g10d9b7e3h2e3h2g11d11b8e3h4g8d11b14e2h4g9d10b15e2h6g10c2d6b14e2h10g10d8b10e2h11g10d11b6e2h10g10d11b7e2h7g9d10b12e2h4g8c3d6b17e2h3g9c5d4b17e3h5g10c3d5b14e9h3g10d9b9e10h3g10d10b7e10h2g10c2d8b8e8g9d6cd4b12e5g10d8b17e5g10d9b16e8g11d8b13e11g12d9b8e10hg13d9b7e8h3g10d11b8e7g11d8c2b12e5g9d10b16e5g10d8b17e8g10d9b13e11g11d9b9e12g11d10b7e9g12d11b8e3h4g10d10b13e3h2g9d8b18e4h2g8d8b18h8g9d9b14h11g10d9b10h11g11d5c3b10',
+				'd19e19a2d18e14a8d10e21a9dc3d4c2e22a8c10e21a9ck8e11h2a18e2h6e8h2eha20e4h2e11h3a20e17h3a20e11h9a20e9h2a21f8e9ha22f8e9ha22f8e9a23f8ah2a25f12a20f20a20f20a20f20a20f20a10f22j7ea10f22j7ea11f21j7ea10f21j8ef20j19ef20j19ef20j19ef20j19ef11e3j2e3j19a2f10j21a9f10j21a9f9j22a9j20a20j19a21j19a21j19a21j10a30j9a22d8cj9a22d8cj9a22d8ca22da8d8ca19d20ca19d20ca19d19c2a10d22c8a10d21e7h2a9d22e8ha9d22e9d19e21d19e21d19e21d2ad4c12e5a2e14',
+				'h11f6i6a15k2h11f6i6b6k11h11f6i6b6k11h11f6i6b6k11h11f6i6b7k10h11f6i6b7k10h8f7i8b7k10h8f6c4i7b7k8h7f7c4i8b7k7h4f7c4i11b7k7h4f7c4i13b7k5f7c9i13b6k5f7c9h7i8b7k2f7c9h7i9b8f6ic4icih9i9b8f7c3i5h11i9b5f7c3i6h7ihi9b6h3f7i6h7i6c3b8h3f7i18b12h4f6i18b7k5h6f7c5i10b7k5h6f7c7i3c2b9k6h8f7c4i4c2b7k8h7f8c6ib9k9h4f8c9b7k12hg2f8c11b6k12f9ic14b7k9f8c5i3c8b7k9f4i2fi2c4i3cic9b7k6f4i6c3ih3i2c8b7k6i10c2ih7c6ib7k5ei13h7ki2cici4b10f3i8h10i9b10f3i9h11i7b10f3i10h10i10b7f6i7h7i10bib8f7i23b10g3f4i19b14g3f5i18b14',
+				'c5i15c9a11d2c5ic2icic16ia10d2ic5i2c2i2c15ia10d2ic13ic12ia10d2c14i2c11ia10d2c15i2c10ia9jd2c27ia7c2jd2c27a9cjd2c23a15d2c22ia15d2c22ia4g2a9d3c21ia5ga9d3c21ia15d5c14i4ca16d5c13ia11gal2a6d3c15ia10g2l8ad2c16ia10g2l9d2c16ia10gl10d2c16a11gl10d2c11i2a10g2ag2l10d2c10i2a11gl14d2c10i2a11l15d2c10ia12l15d2c10a13l15aia17g5l16aia16g2l20a19gl20',
+			] },
+		{ name: 'Black and Gold', photo: 1, pal: '1A1A1D C38514 5A4520 AE711B 0B5681 4F101E 7D3A1C 80622F A0A372 57635A', lurex: 'h',
 			blocks: [
-				blk(C.black, C.gold, { m: 'diamond', h: 24, a: C.blue, b: C.gold, c: C.red }),
-				blk(C.red, C.gold, { m: 'check', h: 22, a: C.red, b: C.black }),
-				blk(C.blue, C.gold, { m: 'steps', h: 24, a: C.gold, b: C.blue }),
-				blk(C.black, C.gold, { m: 'zigzag', h: 24, a: C.gold, b: C.green }),
-				blk(C.green, C.gold, { m: 'bars', h: 24, a: C.gold, b: C.blue, c: C.red }),
-				blk(C.red, C.gold, { m: 'diamond', h: 24, a: C.black, b: C.gold, c: C.green }),
-			],
-		},
-		{
-			name: 'Emaa Da', meaning: 'It has never happened before', weft: C.green,
-			warp: [[C.gold, 4], [C.blue, 16], [C.gold, 3], [C.green, 8], [C.black, 3], [C.blue, 10], [C.gold, 4], [C.blue, 12]],
+				'a32h3i3c2a12j3i3j5iac7h6c2a5j6i2h17c2h7cj4c10hc4h6c3h2c4h3c17h2c4h2chc12h2c28h2c5h3chc27h3c4h2c31h5c33h8c8fc23h3c13fc5h3c8hch4ch2c14fc5h2c9h6c17fc19h2c18fc19hc19fh2c37fh3c36fchc14hc22fc16h2c21fc36h3fc13h11c11h4fc15h12c7h3chfc18h8c8hc3gfc5h2c31gfc4h2c22h5c3hc2fc28h5c2h2cgfc35h3gfc32h5c2fc33h3c3fc39fcj10c26j2fa14j5a4j3c2j5a91ea39ea35f6a34f9a31f12a8d4h5a11f14a6d4h11a6f12a7d2h13a9ea17h13a9ea39ea39ea155c2h5a28f5ch6d3a18f12c2h5d4b3h2a5f19ac3h5d2b3h2a4f9a3f8a200',
+				'b14a11b29a10b28a11b16ab10a11b18ab9a12b18ad7c2a7c2a22e8h2d2b7a21e10d3b9a18e13h2d3b6a16e14j2d4b5a15e8j14e3j2ad26h2e9jb2d4b6d6b5d5e9d2b3d5b4d8b3d4e10d3b2d6b4d2hd10j2e7j2h11d6h2a9c2h2d3h2d2je18ja12d10e17ja13d11e15ja15d6b2d4e12ja16d6b3d3e11jd7a2h3ad3h2d4b3d6i4j5d3b34d2b38d3b37d3b37d3b37d3b36d4b36d4b36d4b36d4b36d4b36d4b36d4b36d4b36d4b36d4b36d4b36d4b37d3b37d3b37d3b36d4b36d4b19d2b15d4b18d3b14d5b17d4b14d3b17d6b14d3b2db14d6b12d5b14d8b12d6b13d9b12d6b2',
+				'f2g27f8e3f37e3f37e3f38e2f38e2f28g10d2f5g29d6g10dg4d47b2d37b3d15ad33e2da4d22e18a2e102j16e7j4i28hj3i36hi39hia156d3cd34b3d2cd33b3d3cd32b3d4cd4g3d30g2f121e12f15e11f2e39fe39fe39fei10e19i3e6g2i38gi39gi39f2a38f2a38f2a38fg2d4a33g2d4b19d15g2d5b19d14g7d31gdg280',
+				'd2c29h4f3c2d25h13c2d24h5d9c2d2ce3de9d4e3a4h9a2c2dhe37aghe37ag2e37aghf14a6e6a3f89',
+			] },
+		{ name: 'Emerald Triangles', photo: 20, pal: '171D19 18342B 736D64 794E12 4A433E 742527 634C1A 394022 372E23', lurex: 'abc',
 			blocks: [
-				blk(C.blue, C.gold, { m: 'steps', h: 26, a: C.gold, b: C.green }),
-				blk(C.green, C.gold, { m: 'check', h: 24, a: C.blue, b: C.gold }),
-				blk(C.blue, C.gold, { m: 'diamond', h: 26, a: C.green, b: C.gold, c: C.blue }),
-				blk(C.black, C.gold, { m: 'zigzag', h: 26, a: C.gold, b: C.blue }),
-				blk(C.blue, C.gold, { m: 'bars', h: 26, a: C.gold, b: C.green, c: C.blue }),
-			],
-		},
-		{
-			name: 'Abusua Ye Dom', meaning: 'The family is a force', weft: C.black,
-			warp: [[C.black, 6], [C.red, 12], [C.gold, 4], [C.black, 4], [C.red, 8], [C.gold, 4], [C.green, 4], [C.red, 18]],
+				'b13i7h4i4e12b12i9h3i5e11b10i13hi4e12b9i16e10i4eb13i13e10i4b15i14e5h2i4b19i11e3h2ei4b22i7e9i2b24i4h3e8ib26i3he8i2b29ie7i2eb30e10b28e12b26e8ce5b23e10c2e5b21e19b19e21b14a2e24b13e27b11e29b11e29b13e27b17e23b20e20b23e17b26e14b28e12b29f11b28f12b25f15b22i2f16b20f20b17i2f21b13f27b10i2f28b10f30b10if29b14i2f24b16i2f22b20f20b22i2f16b25i2f13b28f12b30c10b27c13b26c14b23c17b21c19b19c21b15c25b11c29b10c30b12c28b15c25b19c21b21c19b24c16b27c13b28c12',
+				'd7a25d6b2ai3g3a26g5b2a37b3a37b3a37b3a16f9a28f16a21f21a9cb2a8f19a12ba12f13a30f7a138g4a27d6a2d11a18d25a12d29g2a7d31ga8d29a14g2d20a21g2d9ia36d2gia36g3a59i2a35f7a12b2a16f13a10ba12f20a20f21a7c3a12f15a10c3ba14f10a12c3ba16f4a16c4a36c4a36ceced2a34e4d9a20d7e3igd10a16d9e3igd13ga8gd12e3igd13g2a6g2d12e4gd12a12d11e4g5d5a18d8ce4a32b3c2e3a32cb2',
+				'a6d11a11c10a8d11a11c10a8d11a11c10a13d11a11c5a13d11ia11c7a10d11ia11c12a11d6g5a6c5ac7a11d10ga11c7a11d4gd5ga11c12a7g5d5a11c12a11gd11a5c4e4c4a11gd11a5ec4e3c4a11gd11a5e8c10a6g4d12e8c10a11d11ae7c10a12d10ae9c9a11d10ae12c11a12d4ae12c11a11gd4e9c11a10d3g3d4e9c10a11d10e9c10a11d7g3e2c12a14gd7a4e2c12a11d10ga4e2c12a11d10ga4e2c12a11d10a5e2c7a11d3gd7a9e2c7a11d10ga9ea14g4d11a9ca14d11a11c4a14d11a11c4a14d11a11c4fa9d15a11c4f2a8d10a11c9f2a7d5g3d3a11c9f2d11g2a12c10e3f2d11g2a10c12e3f2d9g4a11c11e3i3d7ia14c6e9a2id7ia10c10e9a4d7g4a6c11e8a5g4d2g5a10c11e3a9g3d3g2a10c11e2a12d9a6c3a2c7ea12d9a12c7',
+				'a7c13g3h17a19dg3h17a19g4h17aba17gd2gh17b2a17gd2gh17b3a2ba11g3dg3h16b3a2b2a9g10h14b3a2ba10g10h14b3a8b2h2g11h14b3a8bag15h12b3a10g16h11b3a10g16h11aba9g18h11abab2a6g20h9ab6a4g21h8ag31h8ag31h8a2hg34h2ga9h2g29a10hg29',
+			] },
+		{ name: 'Bronze Checks', photo: 18, pal: '301C18 928259 292C47 5B2B1B AE512D 33547F 348791 134D31 6A4336 A86A1D C1AD86', lurex: 'bcf',
 			blocks: [
-				blk(C.black, C.gold, { m: 'bars', h: 28, a: C.gold, b: C.black, c: C.red }),
-				blk(C.red, C.gold, { m: 'diamond', h: 28, a: C.black, b: C.gold, c: C.red }),
-				blk(C.black, C.gold, { m: 'check', h: 26, a: C.red, b: C.black }),
-				blk(C.red, C.gold, { m: 'zigzag', h: 28, a: C.gold, b: C.black }),
-			],
-		},
+				'e30f10e29f11e26f14e23f17e20c2f18e17c2f21e5a5e5c5gf3gfg2f3gfg5fgc19g21c22g18c20f6g14c20f5c2f2g11c21f4c5f2g8c21f4c8f5g2e30c3f7e29c4f7e26c9f5e23c11f6e19c15f6e17c17f6c29gcgf5g3c21g19c22g18c24fg15c28g12c31g9c34fgf2g2e30c3f2cf4e29c4fc2f4e26c10f4e22c14f4e19c17f4e17c19f4e3c21g16c21g19c22g18c25g15c29g11c33g7c34f6e10i2e17c6f5e28c8f4e26c10f4e22c15f3e20c17f3e19c18f3',
+				'a137f6a32f10a28f15a23f18a22f19a23f17a25f13a29f8a35f3a97h9a31h11a20h22a16h26a11h31a7h34a5h35a5h33a8h29a13h24a19h11a8ha22h9a137j6a32j10a26j17a22j19a22j20a22j17a25j13a30j7a36j2a57h5a35h9a31',
+				'b2a13d12b25a15b26a14d13b13a14d13b13a14d13b13a14d13b13a14d13b13a14d26b15a12d13b15a12d13b15a12d13b15a12d13b15a12d13b15a25d14ib12a13d14ib12a13d14ib12a13d14b13a13d15b12a13d15b12a13d15b25a15d12b13a15d12b13a15d12b13a15d12b13a15d12b13a15d11ad13b15a12d13b15a12d13b15a12d13b15a12d13b15a12d13b15a21d3ab14a26d14b13a13d14b13a13d14b13a13d14b13a13d14b13a13d14b14a12d15b25a15d11ab13a14d12ab13a14d12ab13a15d11ab13a14d12ab13a14d12ad13a15d10a2d13b15a12d13b14ka12d13b14ka12d13b14ka12d13b14ka12b7d6b14a13b12a18b9ab12a17d11b12a17d11b12a17d11b15a16d9b15a17d8b2db12a17d8',
+				'e6d6i18b7fk2e6d7i17b7k3e8d5i14b9k4e8d6i13b9k4e11d4idi7b11k5e11d7i5b13k4e14d3i5b14k4e14d3i3b17k3e14di6b2c11f6i2d12ib4c15f6i2d12b6c14f6i2d10b11c13f4i2d9b12c13f4d8ib17c10f4d6i3b19ic6f3g2id4ib24c6g4i6c18b3cbc6g3k2b6c24g7k3b8c22g10b9c17g14b10c15g15',
+			] },
+		{ name: 'Golden Trees', photo: 17, pal: 'CF7D18 A55C0F 213B1B 391B20 9B2521 AA821A 721814 355F30 2B2B53 C49E5A 784E1F 937D72', lurex: '',
+			blocks: [
+				'h10i7e4j6a13h9i7e4j6a14h8i5ge4j5a17h7i5g2e3j6a17h7i8e4j6a15h9i8e5j6a12h11c2i6e5j6a10h14i7g2e4j5a8h15i7ge4j6a7h13i7e5j6a9ch9i8e4j6a12c3h5ci6g2e3j6a14c4h2c2i6e4j5a14b3hc2h2c2i7e4j6a14b2h6c4i6e5j5a12b2h7c2hc2i5g2e4j6a9b2h12c2i7e5j5a7b2h13c2i7e5j6a5b2h13ci6e6j6a5b3h11c2i6e4j6a8b3h9i7e5j5a11b3h7i6ge4j6a13b3h7i5g2e4j5a14b3h8i8e4j5a11b4h10c2i5g2e3j6a8b4h12c2i6e5j5a7b3h15i7e5j5a5b3h13ci8e4j6a5b3h10l3i8j16b3',
+				'i14a11e12g3i11a12e14g3i10a9b3e15g3a3ba12e14a6b4a3ba7e2b2e14a8b3a3b3a4e13a14b3e17a19b4e17a12h8c3e16ba12h9c2e13b4a7h14c2e16ba8h14ce17a12h10ce18ba11h9ca10e13a14h2ca10e13a16ba16e14a9ba16e14a9bi11a9b2e12a3b3i11a12e16gi16a7e17i16a9e15i11a12e17i11a12e15gea17e21g2a16e14a8b2a11e13a16e3a2e18a17e17a14h2a2f2a3e17a13h10e14a14fh11e17a9h14e17a13h10e17a13h10a10e12a8h10a11e13a12f2h2a17e10a30e14a9i11a13e7a9i11a13e16i11d2i4a7e16i11db6aba9e11i2k3i6b11a4e14',
+				'f17a2b4d7l2d8f17a2b4d17f17a2b4kd16f17a2b4kd16f17a2b4kd16f17a3b3kd16f17a3b3kd16f17a3b3kd16f16a4b3kd16f15b9d16f14b12d14f13b14d13f12b16d12f11b18d11f12b18d10f14b16d10f15b14d11f16b12d12f17b9d14f18b7kd14f18b7kd14f19b6d15f19b6d15f19b6kd14f19b6kd14f19b7d14f19b7d14f19b7d14f19b7d14f19b7d14c19b6g2d13c19kb6g13dc19kb5g15c19kb6g14c19kb6g14c19kb6g14c19kb6g14c20b6g14c20kb5g14dc19kb5g14d2c18b6g14d3c15kb9g12d4c13k3b4k6g10d10c6k16g8',
+				'g3c14b14d9g2c15b13kd9c12b13d15c11kb13d15c11kb13d14c12b9d19c6b14d15f3k2c6b13kd14kf6c5b12k2d14f7b14d13f13b15d13f12c5b14d15f6c5b14d15f6c5b14d15f5jc12b14d14c12b14d14c12b15d17c16b8kd3k2d6g5c15b14kd5g6c14b15d5g7d3c11kb14d4g13c15b10k2g14c14b12g14c15b11f7g13c13k2b5f7g14c15b4f8g13dc15b3f8g13d2c15b2f15g13c12d2f13g14c11d2f13g14c11d8f10g12d3c7d8f11g14c7d2f14g14c10d2f13bg13dc10d2f13bg13c11f9g2b5g12c12f8bg14c17f8g14c16b2f3eg18c16b2f2bg13c14b10f2g13dc14b10fg13d2c14b10g9c21b10g8dc14b15d2g7d2c14b15d2g2c14bc6b14d3g2c14b14d10g2c14b14d10',
+				'c2f3h3a20i5a5i2c5h3a3b6a4b4a2i13c8a2b7a4b6i13',
+			] },
+		{ name: 'Royal Blue Stole', photo: 7, pal: '112A77 C4C3C1 807A4F 17161B 0C2F54 CB9530 B37A2B A93E1A 36361B 6D654B 912229 585D85', lurex: 'cf',
+			blocks: [
+				'b14a14g2f10b15l2a11g2f5g2f3b17a7g4f6g4fgb16a8g4f6g5fb15a11g4f4g5fb16a11g3f5gf4b18a6g2f14b17a6g2f15b15a12f13b16a11lf12b17a7j2g3f11b11l2a11jg3f12b12la13g3f11b17a10glf11b18a2l4g4f12b13a10lg3f13b13a14g2f11b17a11g3f9b18a7g7f8b13a11g8f8b13a12g9f6b16a12l2g4f6b18a10l2g5f5b19a5g11f5b14a11g3f2g6f4b15a13f2g5f5b18a10f2gf2gf6b19a6f15b13a12f15b14a14f12b17a12lf10b19a10l2f9b13e4b2a5g4f12b14e2a9g3f12b16a12gf11b18la10g4f7b19a3e3j2g6f7b15a8e2g9f6b16a9e2g7f6b18a10e2jg4f5b19a4e5j3g5f4b15a10g13f2b16a10j2g10f2b18a9e2jg6f4b19a4j2a2egj2g6f3b15a9jg13f2b16a10g13fb19a8g10f3b13a4ba7fg12f2b14a11f6g7f2b17a12f2g7f2b19a10fg2f8b19a9f12',
+				'a2b8a567g5a33fg8a29g2fgk5g4a24g5hk7g5a22g6fg10ea23g7k5g4ea22g7k7g4a22g8f6g4a25g3f8g2a29g2f6a57ia39ia39ia279',
+				'j3c10d13c10j2a2j3c9id6j4c13j3aj4c2j6d3j6c15j3aj11d10c15jc2aj5d16c18ai4d17c18ai4d17c18ai5d20c15i5d16c19i6d16c17ji5d17c16j2i5d17c13e5i5d17c8e10i5d14j2c9e10i5d8c17e10id12c17e10d13c17e10d13c11e16d13c10e17d7c16e17d6c17e17d7c6j2cj5c2e8i9d7j2c5j3e14i9d3j5c6e17i9c3j5c6e17i9c4j2c8e16i10c4j3c7e12i14c2j6e23i9c2j10c2e18i8c3j5c7e17i8c3j4c8e17i8c3j4c8e25c4j2c6j4e24d8c4j4c8e16d8c16e16d8c16e16d8c13j6c4e9d15c6j2c8e9d15c16e9d15c6j3c7e9d15c6j3c16d24c16i8d16c16i8d16c16i8d16c16i8d23jc8i13d16cj2c8i9d15c16i8d16c16i8d16c15ji8d16c11j5i7d9i2d4jc9e8d15c17e8d15c17e8d15c17e8d15c15e10d11j5c8e16d8c5j2c9e16d8c16e16d8c13jcje14b2dj16c3j4dj2d13e16jc4d19e16c5d19e16c5d19e16c5d19e16jc4d19e16jc4d19e16j4cd19e15j5c3d17',
+				'k15hg14e10k14h2gh11k2e10h28k2e10h29e11h29je10h28kje10h27k2je10h28k2e10h28k2e10h29ke10h29ke10',
+			] },
+		{ name: 'Green Cross', photo: 6, pal: '107968 85142F 152573 D1C6A1 B9973E 3B2051 AA9B79 F2DE58 8B6A4F', lurex: 'c',
+			blocks: [
+				'a782h7a33h7a33h7a33h7a33h7a32h8ea24h8f7h8a17h7f8h8a17h7f8h8a17h7f8h8a17h7f8h8a16h8f8h8a10h8f7e5f5h5a9h8f7h4e3f3c6d3a6h8f7h3e5f2c6hd2a6h8f7h4e4f2c6h2da6e2h6f7h3e5f3c5h2da6e2h6f7h3e5f4c4h2da13h7f10h9da14h7f8h8a16h8f8h8a17h7f8h8a17h7f8h8a17h7f8h8a24i2e7h6a25h2e6a32he7a32he7a32he7a32e8a576d13a22',
+				'a9d3g12d4f12a8gd8g4d8f11a6dg2d7f5d16g2fd15f6d17g2d12f13d14gd12f13d14gd16f5d18gd16g11d12gd4g3d4g21d7gdg4f3d5g2d2g3d2gd3g4b10c2f7d8g3d7g2b11c7f5d13b15c10f2d12b16c12f4d5b19c12f4d5b19c11fd13b15c8f4d13b15c7fd21b11cf7d10b3d13g6d16b5d14g5d12b13d11g5d11b13d12g6d13b5d16g7d13b4d12gd4g11d23g2d4g11d21e10b8d21e11b12d14e14b12d13e15b16d5e19b16d5e19b12g2d11e15b12g3d11e14b9ig10d10e10b8ig8e4d19i11g5e5dg2d16i18ei2eigd2gd14g3i13ei2e2i2g6d12g5i10e5ig8d9g10i14g9d7g21igi3g7d7e9g16ig5ag3ad3ae9g19ia11e13g13a14e16g10a14e17g5a18e17g5a18g2d5eig14a17g2c21a4g4a9',
+				'b10e8fc16f5b10e8fcf4c14f2b17e2h5e2c12f2b18e2h4e2gc12fb17e3h2ehe2gc13b17e9gc13b17e9gc13b17e9gc13b18e9f6c7b24e9c7b18e9f6c7b17e9gc13b17e3he5gc13b17e2h3e4gc13b17e3h2ehe2gc13b18e4h2e2gc13b17e9c14b10e9c21b10e8fc21b10e8fc21b10e8fc21b10e8fc21b10e7g2c21b5i6f8c21b10if8c21b10e8f2c20b10e8f2c20b10e9fc20b10e9fc20b11e8f4c3fc13b12ie6f10c11b18i2f11c9b18ie8f4c9b19e8if4c8b19e8if5c6fb19e8if7c4fb19e8if12b22i4eif12b27i2f11b20e7i2f11b20e8if11b20e8if11b20e8if2cf8b20e8ifc4f6b19e9f2c6f4b13e8f8c7f4b13e8fc16f2b13e8fc16f2b13e8fc16f2b13e8c18fb6e6i2f3e2gc20b5ie7c27b5e8c27b5e8c27',
+			] },
+		{ name: 'Lurex Diamonds', photo: 8, pal: '152151 2E3140 6D4D2A C78E34 6E1531 0A3C62 10216A 1A6C49 9E2240 1B37A0 2BB07D', lurex: 'dhjk',
+			blocks: [
+				'h5d7j20d8hd10j23d17j23d17j23d16i24d16i24d16i23d17i23d7h6d7i16d8k3h6d7i16d8k3h9d5idi12d9k3h10d7i7d9h3k4h9d8i7d9h5k2h13d20h4k3h13d15h10k2h13d15h9k3h17d11h10k2h17d7h14k2h17d7h14k2h16d8h14k2h13d14h10k3h13d15h9k3h13d15h10k2h10d8g2j3d5h10k2h9d8j7d8h6k2h9d7g2j5d9h5k3h8d8gj6d9h5k3h5d8g2j12d6h4k3h5d7g3j12d8h2k3h4d8g6j2gj6d8h2k3d9g12j6d8h2k3d8g12j11d17g12j4g2j5d17i9e3i11d17i23d9h3d5i23d9h5d7i18d10h5d7i14d8k6h5d7i14d8k6h8d7i11d8h2k4h8d8i6d9h5k4h8d7i7d8h6k4h11d5i6d8h6k4h12d14h10k4h12d14h10k4h12d14h10k4h15d7h15k3h15d7h15k3h15d7h15k3h11d11h15k3h11d12h14k3',
+				'c2i3c21g7j5e2c8g25e2g3e2c9g22e2i5e2c10g19e3i6e2c11g17e8i2e2c12a8g6e14c13a11e16g4a18e17cg9a6e8c17g9a4e11c16g9a3e14c14g9ae17c13g9e20c11g2a5e23c10e8c16e7c9e9c22ag5a3e11c19g8a2e12c17g10ae13c14g12ae14c11g14ac8e7c9ag14ac15a2g6a2e6g8ac14g10e16c12g13e15c11g15e14c10g18e12c8g21e10bc7ag22e9bg2a2g2a2e10a3e3a3g4e8bg8e24c7hg9e21c10g10e19c11g12ae14c13g12a2e11c15e6a3ea5e9c16e15c8a4c13e13c11g13a3e11c14g12a3e9c17g11a3e8c20g10a2e6c23g9a2c6a4c20g8ahc7ag12b2c9g7ahc8g23e3g3a2hc9g22e8hc10g19e3ie3i2ehc12g15e10iehga3c9ag11e14hg13a4g7e15hg13e26hg11e12c16hg10e12i2c14bhg8e15i2ec12bhg6e21c11bhe29c11e8c7e15c10',
+				'b13a9b2f15b4fb21fa8f4b2f7b18a13b2f7b17a14b2f7b9a22b17a23b17a23b17a23b18a23b17a24f6b19a15f7b18a15f7b18a15f7b18a15f25b10a12f18b14a9f17b15a8f16b16a2f15b23af16b23af16b23af17b22a9f18b13a9f18b13a9f18b13a9f18b13ab8fa16f8b16a17f12b11a17f12b11a17f12b4a15f22b2a16f22b2a16f22b2a16f22b3a22f15b10a17f12b11fa16f12b11fa16f12bf11b12aba9f5bf10b17a13f10b17a13f10b17a13f10b9ab6a14f3b15a22f3b15a22f2b16a22f3b3f2b10a22f10b16a14f10b16a14f10b16a17f7b16a23f11b5fa23f18b2a3bab4aba9f17b14a9f17b14af16b3f6b14f16b24f16b24',
+				'a18b2c9b11a18bc11b10',
+			] },
+		{ name: 'Rose Garden', photo: 9, pal: '2C1720 830C19 BD9490 AD1327 622E1D 5F3F41 CE7190 A65A1E A9721F', lurex: 'ei',
+			blocks: [
+				'd18a22d16ea22fd13a25f2d12g6aga3g2ag12f2d13g27d15g25d18g22d20g20d24g16d25g15d22g18d19g21d16g24d13g27d11h6g22hd12h22i2h4d15h25d17h23d21h19d24h2i2h12d24h2ih13d22h18d19h21d16h24d13h27d12c7h21d13c27d14c26',
+				'ic39ih16c23h17c12a11h17c12a11h11c13a16h11c12a17ch10c12a17c17a12g11c17a12g11c11f2ca15g11c11fa11g17c11a12g17a17g12d3g2dg5a17g12d10ba17g12d11a12g11d17a12g11d17a10g13d17a11g9d20a12g12d16a12g12d16a16g8d16a17g12d11a17g12d11c11a7g11d10bc12a11g17c12a11g17c17a7g16c17a12g11c17a12g11i3h5c9a12g11ih11c11a17h11c12a17h12c11a17h17c11a12h17c12a11db7h9c12a11b12h11c17b11h12c17',
+				'b16e7a17b16e7a17b16e7a17b16e7a17d2b12e13a13bdb11e14a13b13e14a13b10e6c8e7a9b9e7c8e7a9b9e8c7e6a10b8e5c11e7a9b7e6c14e7a6b7e6c14e7a6e10ce2c17e5a5e10c21e19c21e16c25e15c28e12c27e13a28e12a28e13a26e15a22e18a22e9a6e6a19e9a6e7a15e7b5a6e7a14e7b6a9e7a8e9b7a9e7a8e8d5b3a9e7a8e7bd6b2a13e16b3d7ba13e14b2d11a13e14bd12a16e8b5d9b2a16e8b7d6b3a16e8b16a16e8b16a16e7b8d2b7a16e8b6d4b6aca13ce8b16c16e7f17c15e8f17c15e8f17c15e8f17c15e8f17c15e8f17c12e14f14c12e15f13',
+				'b18f12a10b18f12a10b14e3f6a17b13f9a18b15e4f11a10b18ef11a10b18ef11a10b18ef7a14b2e6fe2f8a11i9bf18a12i9bf18a12i9bf13a10i16bf12a11i16bf13af5a12i8bf19a12i8bef18a12i5h2b2a19i12b9a19i12b9a19i12b9a19i12b9a16i7b17a14i9b17a20i11b9a20i12b8a20i11b10a19b12f8ba13i6b12f8bai18b12f8e2i18b12ef7e2i18b7e6f8hi11b14f4e6f4hi11b19f3ef5hi18b12f9hi18b12f9ei18b11fa8fei9h2b7f12a8feb18f12a8feb18f12a8feb18f12a8feb17f6a15feb12f2ef7a16feb12f2e5f11a8b20ef11a8b20f12a8b20f8a7i5af3be2b4e5f4a12i8af14ef4a12i8af19a12i8af19a12i8af14a9i16f12a12i16f13a17i10',
+			] },
+		{ name: 'Turquoise Field', photo: 10, pal: '10514F 6A9D41 2B3C2D B0BC83 0A77A6 75334F 93888F 512733 96452D 0D6E7C AD9428 664D50', lurex: 'e',
+			blocks: [
+				'l2g31j7l2g31j7g120l2g38l2g38l2g118hf13g26hf14g25f30g10f31g9f323eh8f28e13f27e13f27e29f11e29f11e320je39j11e29j12e28j26e14j28e12j34e6j120',
+				'b6d5b17k12b27k13b26k14b24k16b22k18b21k19b19k21b17k23b17k23b19k21b21k19b23k17b24k16b26k14b28k2d10b28d12b26d14b24d16b23d17b21d19b19d21b18d22b15d25b15d25b16d24b18d22b20d20b22d18b24d16b25d15b27d2i11b27i13b25i15b23i17b22i18b20i20b18i22b16i24b15i25b16i23jb18i21jb20i19jb21i17hjb23i15hjb25i13hjb26d12ajb25d13a2b23d15a2b21d18ab20d18a2b18d20a2b16d22a2b13d25a2b12d26a2b13d25a2b15d23a2b16d22a2',
+				'a21h19a20h20a17h23a15h25a13h27a10ch29a10c2h7c2h19a11c29a14c26a16c24a18c22a20c20a22c18a25c15a27c13a27c13a23c17a20c20a18c22a15c25a12c28a10c30a9c31a11c29a13c27a16c24a19c21a21c19a23c17a26c14a26c14a24c16a21c19a18c22a15c25a12c28a10c30a9ch3c27a9h30ca12h28a14h26a17h23a19h20ba21h18ba24h15ba26h13ba25h14ba22h17ba20h20a19h21',
+				'a211clc8l4c2lc3a19c2l18ca21l18a23l16a25l14a27c2l9a30cl9a29l12ac2a24l14c2a23l16c2a22l17c2a8',
+			] },
+		{ name: 'Midnight Arrows', photo: 11, pal: '1A192B B86D4F 216D94 11516F 734F19 89181C 3F2127 5A4C3D A28D86', lurex: 'ac',
+			blocks: [
+				'b385c14eb25c15b17c23b13c27b6c194ac39ac39ac39ac39ac34d2c3adc4d3c17a15dc4d2c17a15c13da26c12d2a26',
+				'a25b15a24b16a12b28a12b307ac3i6ci6b8i14a2c16b9a15c12b18a15d2c3b21a171b5a33b9c7d2c2d2c8d2a8b11c19da9b13c16a11b16c11a31ca3c3a191b9c15a13b14c13a12b18c10a14b17a2c3d3a131b6g2ag2a6g3a7d2ca11b21c8a14b15c11a17b8d3c12a38c2',
+				'a37b3a37b3a37b3a37b3a37b3a37b3a37b3a37b3a37b3a37b3a38b2a38b2a38b2a38b2a38b2a38b2a38c2a18d9a11c2a5d21a12dca6d18a14dca9d12a17dca12d10a16dca11d14a13dca8d19a11dca7d15a16dca38dca38dca38dca38dca38dca39ca39ca485g8ag3a12g2a14gf21ag2a20f16a26f11a29f11a28f14g2a21f20a19f5g7a3f2a2g2a11ba39ba39ba39ba202g5a18g3a4f5a3',
+				'ih6e4g10e4d2h4d7a3h4e20d3h3e3a7h4e29a6e34a6d9e19a12d9e13a18e21a19e18a22e10a30e10a30e9a20d6a5ea21d13a27d13a27d13a21d19a16d24a15d21e4a11d17e12a5d23ed11a5d35a5d36a15d25a15d7a5d13a27d6ada129e12a28e13a2g3e5a17e24a16e36a4e36a4h3d9e24a4h2d10e12a16h2e22a16e23a17e13a27e13a27',
+			] },
+		{ name: 'Coral Lurex', photo: 12, pal: 'B23B1E C76D5D 601614 421D2A 9F2F1E D94F20 BD8C67 936050 91551C', lurex: 'ad',
+			blocks: [
+				'f5a32f9a12c4e2a13f11a7c9e2a14f10a2c15a13f9c7e8c7e2a7f5c2hdc4e14c8e4ac7hdce2ae5c6e7c6d3c7e8c12e6c2d5c7e6c4h2ch3c5e4c3dc2d2c7ec7i10d4c10dc6ac7i12c2dc27i8c24e5c15e4c17e7c8a3e4c9f3a3c6e8a7eh2c3a7f5a4c6e5a3e2c3h2cf5a4f5a6e2c4e6c5f10a2f6a7e2c10a2f12af6a10c8a2f21a5f2a12f24a2f6a5faf26af8a3f4a2f33af4a2f38a2f38a2f38a3f10h4g2hg33h14g4h3g6h3gh7g2h17gh6g4hg2h6g3h24gh14gh38g2h37g3h37g3',
+				'a15b25a14b26a13b27a13b27a2ea11b25hae3a12b23ha2ea14b22ha18b21ha19b20ha20b19ha2ea17eb18hae2a16e2ab17hea18e2a2b16he3a2ea12e2a4b15he10g2eae6a15fa2e8g6e8a3e6a6fa2e21a4eb16ae6ae12a3b17a2e4a2e12a2b18a3e3a5e10b19a3e5a2e6a2e2b20a3e13a2eb20ha4e14b22a11e6b23a13e3b24a13eb26a15b25a16b23ha17b23a19b21a19b21a21b19a22b18a23b17a24b16a26b12e2g13a24e3g13a25e4a23b15e3a21b16e3a20b17ae2a18b19a18e2b20a18eb21a18b22a17b23a15b25ae3a10b24gbg40',
+				'a10d2g15d3a20g20a13e2a6g18a11b3e4a6g15a9be2b8a6g12a6b17a2ea3g9a7b19e2a5g6a6b22ea16b25a13b29a10b31a8b32a7b33a7b31a10b29a13b25a16b23a6d7a5b20a6d10a6b10e2a11d12a15e3a8d16a13e3a7d18a12e5a4d20a11e6ae2d21a10e9g21a10e10g19a11i3e8g16a13i7e6g13a11iai9e6g11a7i18e5g8e2a5i20e7g2eg2e4a2i24e15i13',
+				'a8e2c27ea9e2c28ea12c27ea15c24ea17c22ea18e2c19ea22c17ea24c15ea26e2ae2ce2c5ea38e2a38e2a39ea39ea39e3a36e4a37ea39ea38e3a37e3a21ea15e3a21e2a14e3a22e2a13e3a36e4a27e13a25ed15a23d17a19e2d19a18d22a15e2d23a14d26a10e2cd27afa9ecd27f4a9cd26f4a11d25ef3a14d22ef3a15e2d19efa20d18efa22d16efa24c5d8cf3a23c14f4a17e2c17df4a15c20d2g18hc3gc14ed21c10g7e2d20c10a7e3d18c10a9e3d15c9e2a11e3d13c9a16e2d11c8e2a17e2d12c7e2a18ed14c7a17e2d17c6ea14e2d18c7a13e2d19c7a13e',
+			] },
+		{ name: 'Classic Gold', photo: 13, pal: '895613 242B1F 201611 A66D1A 542020 47433B D1963D 833622 6F4D20 AA753E 453317 917C66', lurex: 'abd',
+			blocks: [
+				'd2c12j8g18d14j8g18d16b2c4f8g10d18c5f17d6g2d5g3d3jc4f16d7gd6g2d3j3d2bf15d11j3gj6d3g3f14b3f21g3f13b3f22g14fbf22g16f3bf15d2g18jfb4f11g2d2g18j2gd5f7j2g3d2g18j2gd12jf10l3g10j3gd15f16l2f6g2d14gdf14lf7gd14g2d4gf18d15g3d2g5f15d20g6f14',
+				'e11b6l21e13b6f3bdk2j7f2jle5h10j3b2i2f3dg4j10e5h10j3bfi2f3g15hj2h2e11fb2f2bf4g14hjh2e12b6f4jg5j4f2je6h10j2f3i2j2f2g7j7e5h10jf4i2jf2g15he4he10b6f4j6g4j4he4h2e9b6f4j7g2j5e5he2h7i2jf2i2fjkg10j6h4e4h7j2f2i2cjkg13j5h2e11b6f2c2jk2j3gj7e5h10k2b3ibf3cjk2j11e5h10ij3i3f3dg14h2jh2e11bf2b3f3dg14h2jh2e11b5cf3cdk2j2k2j7e5h11k4i2f3gdj4k2j7e5h10ek3i3f3gdg13e16b4f6jgkj2g5jgj2e16b4f5cdk2j11e6h2e5h2j3i5fg9j7e13h3j2i6g16h3e2',
+				'c3d10b10d8c14d9b10d11c11d11b12d6c16d11b7d10cd5c9d9b12d10c12d12b6d3a2d11c6d12b16d7c11d11b11d12c8d10b15d7c11d11hb2c2b6d13c6d11b3cb8d11c12d5b15d12c8d4cb11d17c12b10d13c17b5d18c12d7a2d12c19d6ad8c19d12ad2c19d12b5c16d18b6c11d2c3d12b12c10ad12b2d3b12c4a8d11b12d4a17b19d4a6i2a3b19d11a2l10b14a3d11',
+				'a8c7a6b6i3a19c6ka6b6i2a17dad2c7a6b7a16d4a2c8a5kb7a19c8a6ib7a14c7k2a8i2b7a9c11a7i2b7i2a9c9a8i2b8a13c7a7b11a16c6a7b7i2a20k2c5a5b7ia23c6a5b7a24c7a5b6a24ic6a4b7a22i2c7a5b7a15c13a6ib6a9i2c11a8i4b6a6k2c8k2a9i2b10a8kc7a8b12a14k2c5a6b8i3a19c6a5b6i2a23c6a5b7a24c6a5b7a24c7a4k2b5a22c8a6b5i2a12i3c12a7b7a9c13a9b9a6i2c8k2a8i4b10a6i2c6i2a7i2b9k2a12i2c5i2a5b9i4a11iai4c6a4b7i2a15i8c5i2a4b5i2a14i11c4i2a4b5i2a12i2h4i7c5i4b6i2a10li2h4i10c2k2i4b6i2a7l7i12k2i5b6ia7',
+				'e11b9a4d3a5h8e11b9i4ki2a5h7e5h7k7bka3ik2i2k5e18k9d10a2e18c2b8a3d8ah7eh7e4cb8k5i4a2ie6heh11k9a5i7e19kb2k6a2d2a2d5ah3e16b7k3ad2a5da2h5e4h7eh2kc2b3ck7a4k2ie8h11k10a8k2ie19b6k3d4ad3a4h7e12b8i7d2a4h7e3h9kbkb5ik2i3k2a4ke11h8k7ikd4a8e18cb6kikd4ada7h6ehe9b9ik2i4ka3i2h7eh11k3b5ik2i2k3i2k3e11h8k4b4d11a2he17b9d11a2h8e2f2e6b9d2k2di6abe6h2e2c8b3lb5l5i6b2e7h',
+				'c8a9b17d2a4c4a11b18d3a4c4a11b13d8a14b17d9a13b12d14a9b17d13c6a3b12a5d8a5c7b15a4d8c13b9a10da6c14b9a12c13a5b5a11i3a3c13a5b4a11c14a11ba14c13a3d2a7ba8c13a10da7ba3c18ad2a9b7a2c13a8d2a7b8ac10k2ca9d2a2b13a3c8a12b17a3c12a10kb14a8c7a8d3ab13i2a7c11a3d2a5k2b11a7k3c8a12b6cb6a8c13a6b4c3b9a11c8a10c2a4c2b4i2a6d2ac12a11ik2ib6a4d2a6c7a7li8b5k6a5j2c10k2l41',
+			] },
+		{ name: 'Sunburst', photo: 14, pal: '236238 841A1A 2B5076 261C35 6E1421 C1AC2D AE9523 DA7E24 895259 754D18 BC352E FFEB66', lurex: '',
+			blocks: [
+				'h5c15f11l6k3h5c15f10l7k3h5c15f10l7k3h5c16f9l7k3h12c17l11h12c17l11jh11c17l11jh11c17l11jh11c17fl10jh12c16f2l9a5h15c16l4a5h15c16l4a5h15c16l4a5h15c16l4a5h15c16l4a11h10ch6c8l4a12h16c12a12h16c12a12h16c12a12h16c12a12h16c12b4a15h10ch4ic5bk2bja14h17c4bk2bja14h16c5k3ba15h17c4k4a15h17c4k7a12h17c4k11a16h10fl2k11a16h10fl2k11a16h10fl2k11a16h10fl2k11a16h10fl2f4k14a17h2fl2f4k15a16h2fl2f4k15a16h3l2f4k15a16h2fl2f4k15a16h2fl2f11k9b6a10gfl2f11k12b3a13lf11k14b2a11l2f11k14b2a11l2f12k14ba12lf12k15a13',
+				'b6f5d9a20b6f5d9a20b9f6d8a17b12f5d9a14b15f6d8a11b17g3f2g3d7a8b18g2f3g2d7a8b16lg4fd8a10b12f2g2lg4d6a13b9f5g2d9a15b7f4g2d10a17b5f5d9a21b6f4gd8a21b8f2g2fd8a19b10g2f4d8a16b13f5d8a14b15f6d8a11b16k2f6gd6a9b16kf6g2d7a8b13f9d7a11b10g2f7d8a13b8f2g2f2d10a16b6f4g2d9a19b5f5d8a22b7f4gd7a21b9f5d8a18b11f6d7a16b13f7d7a13b15f6d8a11b17f5d10a8b16f5gd9a9b12f8d8a12b9g3f3d10a15b7g6d9a18b5g5d10a20b5g5d9a21b7g5d8a20b9g6d7a18b11g7d6a16b13g7d7a13b15g7d7a11b16g8d7a9b14g9d7a10b11g6fg2d8a12b8g8d9a15b7g5d10a18b6g5d9a20',
+				'e2db5f6d7f8b11e2b6f6d7f7b19f7d7f7b19f6d10f8b14g2f5d11f8b13g2f5g2d8f7b18f6gd7f8b15eb2gf2g4d7fg5fb13e6g8d5g8b2e7c2d2e7b2g16b4e2c13e4bg16b4e2c13e4bg4f2g10b4e2c13e4bg4f2g10b2e4c14e4b2gf4g4fgb5ec18e4bg2f3g2f3gb5ec18e4bgf4g2f3b4e3c18e3b2g2f2g3f2b4ec23e2b4f6b4ec24eb4f6b4ec24b5f5gb5ec20e3b3g3fgfg2fb4e3c18e3b2g2f2g2f5b5ec18e3b2g2f2g2f5b5ec18e3b2g2f2g3f4b5ec17e4b2g7f4b6c16e5g9f6b4e3c13e5g11f4gb3e3c13e5g11f4gb4e2c13e3bg12f5b5ec9e5b2g7d6f5g3b9e3b2e3b2g7d6f5g3b14e2b3g7d6f4g4b14e2b3g7d6gf3g4b18g7d7g2f4g2b16g8d10f7g2b13g8d10gf6g2b16g7d6g5f3b19g7d6g5f2gb19g7d6g8b19g7d6g7b2e11h4b5g16b3e3d9h4b5g2f2g12be4d10h4b6g2fg11e6d10h6b6f2g8b2e4d12h6b7fg8be5d12h9b5g6b2e3d15h9b5g6be4d15h9b5g6be4d15',
+				'i6j6d13j6e9i7j5d12j6e10i9j5d10j5e11i9j6d6j6e13i11j5d5j6e13i11j5d3j5e16i12j11e17i13j9e18i14j6e20i14j6e20i14j6e20i14j6e20i14j6e20i15j5e19ci15j5e19ci15j5e19ci12j11e17i13j10e17i12j13e15i10j5i6j5e14i10j5i6j6e13i8j5i10j6e11i8j4i13j4e11i6j5i15j5e9i6j5i15j6e8i5j4i19j6e6i4j5i20j5e6j7i24j16i24j9',
+			] },
 	];
-
-	const band = (y, h, fill) => `<rect y="${y}" width="${TW}" height="${h + .3}" fill="${fill}"/>`;
-	const MOTIFS = {
-		check(y, h, { a, b }) {
-			const cols = 8, rows = 2, cw = TW / cols, ch = h / rows;
-			let s = band(y, h, a);
-			for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-				if ((r + c) % 2) s += `<rect x="${c * cw}" y="${y + r * ch}" width="${cw + .3}" height="${ch + .3}" fill="${b}"/>`;
-			}
-			return s;
-		},
-		zigzag(y, h, { a, b }) {
-			const n = 5, sw = TW / n;
-			let d = `M0 ${y + h}`;
-			for (let i = 0; i < n; i++) d += `L${i * sw + sw / 2} ${y + 4}L${(i + 1) * sw} ${y + h}`;
-			return band(y, h, a) + `<path d="${d}Z" fill="${b}"/>` + band(y, 2, b);
-		},
-		diamond(y, h, { a, b, c }) {
-			const n = 4, cw = TW / n, cy = y + h / 2, rx = cw / 2 - 1.5, ry = h / 2 - 2;
-			let s = band(y, h, a);
-			for (let i = 0; i < n; i++) {
-				const cx = (i + .5) * cw;
-				s += `<path d="M${cx} ${cy - ry}L${cx + rx} ${cy}L${cx} ${cy + ry}L${cx - rx} ${cy}Z" fill="${b}"/>`;
-				s += `<path d="M${cx} ${cy - ry * .45}L${cx + rx * .45} ${cy}L${cx} ${cy + ry * .45}L${cx - rx * .45} ${cy}Z" fill="${c}"/>`;
-			}
-			return s;
-		},
-		steps(y, h, { a, b }) {
-			const hs = [.4, .7, 1, 1, .7, .4], cw = TW / hs.length;
-			let s = band(y, h, a);
-			hs.forEach((k, i) => {
-				const hh = (h - 6) * k;
-				s += `<rect x="${i * cw + 1.5}" y="${y + (h - hh) / 2}" width="${cw - 3}" height="${hh}" fill="${b}"/>`;
-			});
-			return s;
-		},
-		bars(y, h, { a, b, c }) {
-			let s = band(y, h, a);
-			for (let x = 4; x < TW; x += 12) s += `<rect x="${x}" y="${y + 3}" width="5" height="${h - 6}" fill="${b}"/>`;
-			return s + `<rect y="${y + h / 2 - 1.5}" width="${TW}" height="3" fill="${c}"/>`;
-		},
-	};
 
 	// Vertical ribs where the warp shows, horizontal ribs in the weft-faced sections.
 	// tr: the brick-like weft ribs in the photo. lm/ls/lt: yarn with metallic lurex flecks.
@@ -454,18 +465,61 @@ body {
 		+ `<rect width="9" height="5" fill="${ground}"/><rect x="1" y="1" width="1.8" height=".7" fill="#ECEAE3" fill-opacity=".85"/>`
 		+ '<rect x="5.5" y="3.2" width="1.8" height=".7" fill="#ECEAE3" fill-opacity=".85"/></pattern>';
 	const TEX = '<defs>'
-		+ '<pattern id="tv" width="3" height="4" patternUnits="userSpaceOnUse"><rect width=".8" height="4" fill="#000" fill-opacity=".16"/><rect x="1.5" width=".5" height="4" fill="#fff" fill-opacity=".08"/></pattern>'
-		+ '<pattern id="th" width="4" height="2.4" patternUnits="userSpaceOnUse"><rect width="4" height=".8" fill="#000" fill-opacity=".16"/><rect y="1.2" width="4" height=".5" fill="#fff" fill-opacity=".08"/></pattern>'
 		+ '<pattern id="tr" width="2.4" height="2.6" patternUnits="userSpaceOnUse"><rect width=".6" height="1.2" fill="#000" fill-opacity=".14"/><rect x="1.2" y="1.3" width=".6" height="1.2" fill="#000" fill-opacity=".14"/></pattern>'
 		+ lurex('lm', K.maroon) + lurex('ls', '#3E3A3A') + lurex('lt', '#4F9B72')
 		+ '</defs>';
 
+	const rect = (x, y, w, h, fill) => `<rect x="${x}" y="${y}" width="${w + .3}" height="${h + .3}" fill="${fill}"/>`;
+	const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+	const SEP = 1.4; // the thin white line between blocks
+	const decode = code => [...code.matchAll(/([a-p])(\d*)/g)]
+		.flatMap(([, ch, n]) => Array(+n || 1).fill(LETTERS.indexOf(ch)));
+
+	// One photographed cloth: its blocks top to bottom, each row as run-length rects.
+	function clothMarkup(c) {
+		const cs = TW / CELLS;
+		const fill = c.pal.map((h, i) => c.lurex.includes(LETTERS[i]) ? `url(#x${i})` : h);
+		let s = '<defs>' + c.pal.map((h, i) => c.lurex.includes(LETTERS[i]) ? lurex('x' + i, h) : '').join('') + '</defs>';
+		let y = 0;
+		c.cells.forEach((cells, i) => {
+			if (i) { s += rect(0, y, TW, SEP, K.white); y += SEP; }
+			for (let r = 0; r * CELLS < cells.length; r++) {
+				const row = cells.slice(r * CELLS, (r + 1) * CELLS);
+				for (let x = 0; x < CELLS;) {
+					let e = x + 1;
+					while (e < CELLS && row[e] === row[x]) e++;
+					s += rect(x * cs, y + r * cs, (e - x) * cs, cs, fill[row[x]]);
+					x = e;
+				}
+			}
+			y += cells.length / CELLS * cs;
+		});
+		return s + `<rect width="${TW}" height="${LEN}" fill="url(#tr)"/>`;
+	}
+
+	// warp: half the lengthwise stripes, mirrored, for the threads above the fell.
+	const WEAVES = [
+		{
+			name: 'Photo sample', meaning: 'Recreated from your photos · 5 strip designs', weft: K.pink,
+			warp: [[K.gold, 10], [K.orange, 6], [K.olive, 6], [K.gold, 10], [K.crimson, 4], [K.gold, 24]],
+			draw: photoCloth,
+		},
+		...CLOTHS.map(c => {
+			c.pal = c.pal.split(' ').map(h => '#' + h);
+			c.cells = c.blocks.map(decode);
+			// The warp above the fell carries the colours of the strip's first row.
+			const top = c.cells[0].slice(0, CELLS);
+			return {
+				name: c.name, meaning: '', weft: c.pal[0],
+				fullWarp: top.map(p => [c.pal[p], TW / CELLS]),
+				draw: () => clothMarkup(c),
+			};
+		}),
+	];
+
 	// ---------- the photographed cloth ----------
 	// The cloth is many 4-inch strips sewn side by side, in five designs. The loom
 	// carries one block from each design, top to bottom, at its real proportions.
-	const rect = (x, y, w, h, fill) => `<rect x="${x}" y="${y}" width="${w + .3}" height="${h + .3}" fill="${fill}"/>`;
-	const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
-
 	// Stepped diamond on an odd cols × rows grid: pick(d, c, r) colours each cell
 	// by its stepped distance d from the centre cell (c, r are offsets from it).
 	function grid(y0, h, cols, rows, pick) {
@@ -508,7 +562,6 @@ body {
 	}
 
 	function photoCloth() {
-		const SEP = 1.4;
 		const blocks = [
 			// orange diamond with purple cross, sky and crimson steps
 			[66, (y, h) => grid(y, h, 21, 17, (d, c, r) => {
@@ -555,7 +608,6 @@ body {
 	}
 
 	const mirror = half => half.concat(half.slice().reverse());
-	const blockH = blk => blk.reduce((s, b) => s + (Array.isArray(b) ? b[1] : b.h), 0);
 
 	function colorAt(stripes, x) {
 		let acc = 0;
@@ -563,33 +615,10 @@ body {
 		return stripes[stripes.length - 1][0];
 	}
 
-	// Warp stripes, then each section, with stripes between and at both ends.
-	function stripMarkup(w) {
-		const gap = (LEN - w.blocks.reduce((s, b) => s + blockH(b), 0)) / (w.blocks.length + 1);
-		let s = '', y = 0;
-		const stripes = () => {
-			let x = 0;
-			for (const [c, sw] of w.fullWarp) { s += `<rect x="${x}" y="${y}" width="${sw + .3}" height="${gap + .3}" fill="${c}"/>`; x += sw; }
-			s += `<rect y="${y}" width="${TW}" height="${gap}" fill="url(#tv)"/>`;
-			y += gap;
-		};
-		stripes();
-		for (const blk of w.blocks) {
-			const y0 = y;
-			for (const b of blk) {
-				if (Array.isArray(b)) { s += band(y, b[1], b[0]); y += b[1]; }
-				else { s += MOTIFS[b.m](y, b.h, b); y += b.h; }
-			}
-			s += `<rect y="${y0}" width="${TW}" height="${y - y0}" fill="url(#th)"/>`;
-			stripes();
-		}
-		return s;
-	}
-
 	for (const w of WEAVES) {
-		w.fullWarp = mirror(w.warp);
+		w.fullWarp ||= mirror(w.warp);
 		w.stripUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-			`<svg xmlns="http://www.w3.org/2000/svg" width="${TW}" height="${LEN}" viewBox="0 0 ${TW} ${LEN}">${TEX}${w.draw ? w.draw() : stripMarkup(w)}</svg>`);
+			`<svg xmlns="http://www.w3.org/2000/svg" width="${TW}" height="${LEN}" viewBox="0 0 ${TW} ${LEN}">${TEX}${w.draw()}</svg>`);
 	}
 
 	// ---------- build the loom's dynamic parts ----------
@@ -656,25 +685,22 @@ body {
 	// ---------- picker ----------
 	const section = $('loom-section'), toggle = $('loom-toggle');
 	const nowName = $('loom-now'), cta = $('loom-cta'), bobbin = $('bobbin');
+	const pickName = $('weave-name'), pickMeaning = $('weave-meaning'), bar = $('weave-bar');
 
 	const chips = WEAVES.map((w, i) => {
 		const li = document.createElement('li');
 		const b = document.createElement('button');
 		b.type = 'button';
 		b.className = 'weave';
-		b.innerHTML = '<span class="weave__swatch"></span><span class="weave__text"><span class="weave__name"></span>'
-			+ '<span class="weave__meaning"></span></span><span class="weave__progress"></span>';
-		b.querySelector('.weave__swatch').style.backgroundImage = `url("${w.stripUrl}")`;
-		b.querySelector('.weave__name').textContent = w.name;
-		b.querySelector('.weave__meaning').textContent = w.meaning;
+		b.title = w.name;
+		b.setAttribute('aria-label', w.name);
+		b.style.backgroundImage = `url("${w.stripUrl}")`;
 		b.addEventListener('click', () => select(i));
-		b.querySelector('.weave__progress').addEventListener('animationend', () => {
-			if (i === target) select((i + 1) % WEAVES.length);
-		});
 		li.append(b);
 		$('weaves').append(li);
 		return b;
 	});
+	bar.addEventListener('animationend', () => select((target + 1) % WEAVES.length));
 
 	// ---------- state ----------
 	const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -689,18 +715,19 @@ body {
 
 	function applyUI(i) {
 		const w = WEAVES[i];
-		chips.forEach((c, k) => { c.setAttribute('aria-pressed', String(k === i)); c.classList.remove('is-timing'); });
+		chips.forEach((c, k) => c.setAttribute('aria-pressed', String(k === i)));
+		bar.classList.remove('is-timing');
 		WEAVES.forEach((x, k) => { x.warpG.style.opacity = k === i ? 1 : 0; });
 		bobbin.setAttribute('fill', w.weft);
-		nowName.textContent = w.name;
+		nowName.textContent = pickName.textContent = w.name;
+		pickMeaning.textContent = w.meaning;
 		cta.firstChild.textContent = `Shop ${w.name} `;
 	}
 
 	function startTimer() {
-		chips.forEach(c => c.classList.remove('is-timing'));
-		const c = chips[target];
-		void c.offsetWidth; // restart the progress animation
-		c.classList.add('is-timing');
+		bar.classList.remove('is-timing');
+		void bar.offsetWidth; // restart the progress animation
+		bar.classList.add('is-timing');
 	}
 
 	function settle(L) {
