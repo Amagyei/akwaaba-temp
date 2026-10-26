@@ -3,3 +3,4 @@
 *.key
 __pycache__/
 out/
+!.env.example
