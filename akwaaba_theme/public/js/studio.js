@@ -1,7 +1,8 @@
 /* Serwa Kollections — Studio (/studio)
  *
- * Phone-first item upload: photo of a garment → saved AI prompts → sliced
- * gallery → new or existing item. Talks to akwaaba_theme.studio.api.
+ * Phone-first item upload: photo of a garment → optional sizes or colours →
+ * model, arc and saved AI prompts → sliced gallery → new or existing item.
+ * Talks to akwaaba_theme.studio.api.
  *
  * Choices made while reviewing (which photos to keep, which is main) stay in
  * the page until "Create item"; everything else (photos, AI outputs) is saved
@@ -35,9 +36,22 @@
 		errors: [],            // last generate() per-prompt failures
 		done: null,
 		busy: null,
+		model: ((S_first(bootEl, "models")) || {}).name || "",
+		arc: ((S_first(bootEl, "arcs")) || {}).name || "",
+		engine: ((S_first(bootEl, "engines")) || {}).key || "",
+		optKind: "",           // "", Size or Colour
+		optRows: [],           // [{label, price}], including rows still being typed
+		sourceLabel: "",       // which option's photo the AI starts from
+		extraLabel: "",        // which option the next added photos belong to
 	};
 	S.form.item_group = S.boot.default_group || (S.boot.groups || [])[0] || "";
 	S.form.publish = !!S.boot.publish_by_default;
+	S.form.stock_mode = "made_to_order";
+
+	function S_first(el, key) {
+		var boot = el ? JSON.parse(el.textContent || "{}") : {};
+		return (boot[key] || [])[0];
+	}
 
 	var $ = function (sel, root) { return (root || document).querySelector(sel); };
 
@@ -176,7 +190,14 @@
 	// ---------------------------------------------------------------- session
 
 	function applySession(sess) {
+		var isNew = !S.session || S.session.name !== sess.name;
 		S.session = sess;
+		if (isNew) {
+			S.optKind = sess.option_kind || "";
+			S.optRows = (sess.options || []).slice();
+		}
+		var labels = (sess.options || []).map(function (o) { return o.label; });
+		if (labels.indexOf(S.sourceLabel) < 0) S.sourceLabel = labels[0] || "";
 		var rows = allRows();
 		var known = {};
 		rows.forEach(function (r) {
@@ -268,7 +289,90 @@
 			'<div class="stu-source__meta"><span>' + esc(s.name) + "</span>" +
 			(s.est_cost ? "<span>AI so far ≈ " + usd(s.est_cost) + "</span>" : "") +
 			'<button type="button" class="stu-link stu-link--danger" data-act="discard">Discard</button></div>' +
-			"</div></section>";
+			"</div>" + viewOptions() + "</section>";
+	}
+
+	var SIZE_CHIPS = ["Mini", "Midi", "Maxi", "S", "M", "L", "XL"];
+
+	function viewOptions() {
+		var kinds = [["", "One version"], ["Size", "Sizes"], ["Colour", "Colours"]];
+		var word = S.optKind === "Colour" ? "colour" : "size";
+		var html = '<div class="stu-opts"><h3 class="stu-opts__h">Comes in</h3><div class="stu-seg" role="tablist">' +
+			kinds.map(function (k) {
+				return '<button type="button" role="tab" data-act="opt-kind" data-kind="' + k[0] + '" aria-selected="' + (S.optKind === k[0]) + '">' + k[1] + "</button>";
+			}).join("") + "</div>";
+		if (!S.optKind) return html + "</div>";
+
+		html += '<p class="stu-muted">Each ' + word + " keeps its own photos and can have its own price. Leave a price empty to use the main one.</p>";
+		html += S.optRows.map(function (row, i) {
+			var photos = (S.session.supporting || []).filter(function (r) { return row.label && r.option === row.label; });
+			return '<div class="stu-opt">' +
+				'<div class="stu-opt__row">' +
+				'<input data-opt="label" data-i="' + i + '" aria-label="Name of this ' + word + '" placeholder="' + (word === "size" ? "Mini" : "Indigo") + '" autocomplete="off" value="' + esc(row.label) + '">' +
+				'<input data-opt="price" data-i="' + i + '" aria-label="Price" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Price" value="' + esc(row.price || "") + '">' +
+				'<button type="button" class="stu-opt__del" data-act="opt-remove" data-i="' + i + '" aria-label="Remove this ' + word + '">×</button>' +
+				"</div>" +
+				(row.label ? '<div class="stu-opt__photos">' + photos.map(function (r) {
+					return '<img src="' + esc(r.url) + '" alt="" loading="lazy" data-act="view" data-url="' + esc(r.url) + '">';
+				}).join("") + '<button type="button" class="stu-add stu-add--sm" data-act="opt-photo" data-label="' + esc(row.label) + '"><span>+</span>Photo</button></div>' : "") +
+				"</div>";
+		}).join("");
+		html += '<button type="button" class="stu-link" data-act="opt-add">+ Add a ' + word + "</button>";
+		if (S.optKind === "Size") {
+			var used = S.optRows.map(function (r) { return r.label; });
+			html += '<div class="stu-chips">' + SIZE_CHIPS.filter(function (c) { return used.indexOf(c) < 0; }).map(function (c) {
+				return '<button type="button" class="stu-chip stu-chip--btn" data-act="opt-chip" data-label="' + c + '">' + c + "</button>";
+			}).join("") + "</div>";
+		}
+		return html + "</div>";
+	}
+
+	function saveOptions() {
+		var rows = S.optRows.filter(function (r) { return (r.label || "").trim(); });
+		var blanks = S.optRows.filter(function (r) { return !(r.label || "").trim(); });
+		var focus = document.activeElement;
+		var refocus = focus && focus.hasAttribute && focus.hasAttribute("data-opt")
+			? '[data-opt="' + focus.getAttribute("data-opt") + '"][data-i="' + focus.getAttribute("data-i") + '"]' : null;
+		return api("set_options", { session: S.session.name, kind: S.optKind, options: rows }).then(function (sess) {
+			applySession(sess);
+			S.optRows = (sess.options || []).concat(blanks);
+			render();
+			var again = refocus && $(refocus);
+			if (again) again.focus();
+		}).catch(function (e) { toast(e.message, "error"); });
+	}
+
+	function storyFields() {
+		var needsStory = (S.boot.prompts || []).some(function (p) { return S.selected.has(p.name) && p.uses_model_arc; });
+		var html = "";
+		if (needsStory) {
+			var groups = {}, order = [];
+			(S.boot.arcs || []).forEach(function (a) {
+				if (!groups[a.group_name]) { groups[a.group_name] = []; order.push(a.group_name); }
+				groups[a.group_name].push(a);
+			});
+			html += field("Model", '<select data-story="model">' + (S.boot.models || []).map(function (m) {
+				return '<option value="' + esc(m.name) + '"' + (m.name === S.model ? " selected" : "") + ">" + esc(m.name) + (m.label ? " · " + esc(m.label) : "") + "</option>";
+			}).join("") + "</select>") +
+				field("Arc", '<select data-story="arc">' + order.map(function (g) {
+					return '<optgroup label="' + esc(g) + '">' + groups[g].map(function (a) {
+						return '<option value="' + esc(a.name) + '"' + (a.name === S.arc ? " selected" : "") + ">" +
+							esc(a.arc_number + ". " + a.name) + (a.skirts_only ? " (skirts)" : "") + "</option>";
+					}).join("") + "</optgroup>";
+				}).join("") + "</select>");
+		}
+		if ((S.boot.engines || []).length > 1) {
+			html += field("Made by", '<select data-story="engine">' + S.boot.engines.map(function (e) {
+				return '<option value="' + esc(e.key) + '"' + (e.key === S.engine ? " selected" : "") + ">" + esc(e.label) + "</option>";
+			}).join("") + "</select>");
+		}
+		var options = S.session.options || [];
+		if (options.length) {
+			html += field("Start from the photo of", '<select data-story="sourceLabel">' + options.map(function (o) {
+				return '<option value="' + esc(o.label) + '"' + (o.label === S.sourceLabel ? " selected" : "") + ">" + esc(o.label) + "</option>";
+			}).join("") + "</select>");
+		}
+		return html;
 	}
 
 	function viewStyles() {
@@ -289,7 +393,7 @@
 		return '<section class="stu-card stu-step">' +
 			head(2, hasRuns ? "More styles" : "Choose styles") +
 			'<p class="stu-muted">' + (hasRuns ? "Add another look, or redo one below." : "Pick one or more. Each runs once on your photo.") + "</p>" +
-			'<ul class="stu-prompts">' + list + "</ul></section>";
+			'<ul class="stu-prompts">' + list + '</ul><div id="stu-story">' + storyFields() + "</div></section>";
 	}
 
 	function tile(r, caption) {
@@ -316,7 +420,9 @@
 		html += runs.map(function (run) {
 			var multi = run.panels.length > 1;
 			return '<div class="stu-run">' +
-				'<div class="stu-run__head"><h3>' + esc(run.title) + "</h3>" +
+				'<div class="stu-run__head"><h3>' + esc(run.title) +
+				(run.option ? ' <span class="stu-chip">' + esc(run.option) + "</span>" : "") +
+				(run.label ? "<small>" + esc(run.label) + "</small>" : "") + "</h3>" +
 				'<span class="stu-run__actions">' +
 				'<button type="button" class="stu-link" data-act="retry" data-prompt="' + esc(run.prompt) + '">Redo</button>' +
 				'<button type="button" class="stu-link stu-link--danger" data-act="drop-run" data-run="' + run.run + '">Remove</button>' +
@@ -348,7 +454,7 @@
 					'<button type="button" class="stu-tile__btn stu-tile__inc" data-act="toggle" data-id="' + esc(r.id) +
 					'" aria-pressed="' + on + '" aria-label="' + (on ? "Leave out" : "Include") + '">' + (on ? "✓" : "+") + "</button>" +
 					(r.kind === "Extra" ? '<button type="button" class="stu-tile__btn stu-tile__del" data-act="remove" data-id="' + esc(r.id) + '" aria-label="Delete photo">×</button>' : "") +
-					"<figcaption>" + (r.kind === "Original" ? "Original" : "Extra") + "</figcaption></figure>";
+					"<figcaption>" + esc(r.option || (r.kind === "Original" ? "Original" : "Extra")) + "</figcaption></figure>";
 			}).join("") +
 			'<button type="button" class="stu-add" data-act="extra"><span>+</span>Add photos</button>' +
 			"</div></section>";
@@ -375,6 +481,10 @@
 				field("Price (" + esc(S.boot.currency || "GHS") + ")", '<input name="price" data-bind type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="' + esc(f.price) + '">') +
 				field("Item code", '<input name="item_code" data-bind autocapitalize="characters" autocomplete="off" spellcheck="false" value="' + esc(f.item_code) + '">') +
 				"</div>" +
+				field("Availability", '<select name="stock_mode" data-bind>' +
+					'<option value="made_to_order"' + (f.stock_mode !== "limited" ? " selected" : "") + ">Made to order</option>" +
+					'<option value="limited"' + (f.stock_mode === "limited" ? " selected" : "") + ">Limited pieces</option></select>") +
+				(f.stock_mode === "limited" ? '<p class="stu-muted">Shows as sold out until its quantity is set on the live site.</p>' : "") +
 				field("Description", '<textarea name="description" data-bind rows="3" placeholder="Fabric, fit, length…">' + esc(f.description) + "</textarea>", true) +
 				'<label class="stu-switch"><input type="checkbox" name="publish" data-bind' + (f.publish ? " checked" : "") + '><span class="stu-switch__ui"></span>Publish on the shop now</label>';
 		} else {
@@ -433,7 +543,7 @@
 			var cost = (S.boot.prompts || []).filter(function (p) { return S.selected.has(p.name); })
 				.reduce(function (sum, p) { return sum + Number(p.cost || 0); }, 0);
 			html = '<button type="button" class="stu-btn stu-btn--block stu-btn--gold" data-act="generate"' + (S.boot.configured ? "" : " disabled") + ">" +
-				"Generate " + n + " style" + (n > 1 ? "s" : "") + ' <span class="stu-btn__sub">≈ ' + usd(cost) + "</span></button>";
+				"Generate " + n + " style" + (n > 1 ? "s" : "") + ' <span class="stu-btn__sub">' + (S.engine === "local" ? "free" : "≈ " + usd(cost)) + "</span></button>";
 		} else if (S.session.runs.length || (S.session.supporting || []).length) {
 			html = '<button type="button" class="stu-btn stu-btn--block" data-act="save">' +
 				(S.mode === "existing" ? "Add photos to item" : "Create item") +
@@ -508,11 +618,13 @@
 
 	function addExtras(files) {
 		files = Array.prototype.slice.call(files || []);
+		var label = S.extraLabel;
+		S.extraLabel = "";
 		if (!files.length) return;
 		setBusy("Preparing photos…");
 		Promise.all(files.map(function (f) { return shrink(f, S.boot.max_photo_px); })).then(function (blobs) {
 			setBusy("Uploading photos…", 0);
-			return upload("add_photos", blobs, { session: S.session.name }, function (p) { setBusy("Uploading photos…", p); });
+			return upload("add_photos", blobs, { session: S.session.name, option_label: label }, function (p) { setBusy("Uploading photos…", p); });
 		}).then(function (sess) {
 			applySession(sess);
 			render();
@@ -523,7 +635,14 @@
 	function generate(prompts) {
 		if (!prompts.length) return;
 		setBusy("Generating " + prompts.length + " style" + (prompts.length > 1 ? "s" : "") + "…");
-		api("generate", { session: S.session.name, prompts: prompts }).then(function (sess) {
+		api("generate", {
+			session: S.session.name,
+			prompts: prompts,
+			model: S.model,
+			arc: S.arc,
+			engine: S.engine,
+			option_label: S.sourceLabel,
+		}).then(function (sess) {
 			return sess;
 		}, function (e) {
 			// Gateway timeout or dropped connection: the server keeps going, so wait for it.
@@ -563,8 +682,9 @@
 			data.set_main = f.set_main ? 1 : 0;
 		} else {
 			if (!(f.item_name || "").trim()) { toast("Give the item a name.", "error"); focusDetails("item_name"); return; }
-			if (f.publish && !(Number(f.price) > 0)) { toast("Add a price to publish, or untick Publish.", "error"); focusDetails("price"); return; }
-			["item_name", "item_group", "item_code", "price", "description"].forEach(function (k) { data[k] = f[k] || ""; });
+			var everyOptionPriced = (S.session.options || []).length && S.session.options.every(function (o) { return Number(o.price) > 0; });
+			if (f.publish && !(Number(f.price) > 0) && !everyOptionPriced) { toast("Add a price to publish, or untick Publish.", "error"); focusDetails("price"); return; }
+			["item_name", "item_group", "item_code", "price", "description", "stock_mode"].forEach(function (k) { data[k] = f[k] || ""; });
 			data.publish = f.publish ? 1 : 0;
 		}
 
@@ -588,7 +708,8 @@
 	function resetToStart() {
 		S.session = null; S.done = null; S.inc = {}; S.main = null; S.errors = [];
 		S.selected.clear(); S.existing = null; S.results = [];
-		S.form = { item_group: S.form.item_group, publish: !!S.boot.publish_by_default };
+		S.form = { item_group: S.form.item_group, publish: !!S.boot.publish_by_default, stock_mode: "made_to_order" };
+		S.optKind = ""; S.optRows = []; S.sourceLabel = ""; S.extraLabel = "";
 		S.codeTouched = false;
 		render();
 		window.scrollTo({ top: 0 });
@@ -667,6 +788,30 @@
 					resetToStart();
 				}).catch(function (e) { toast(e.message, "error"); });
 				break;
+			case "opt-kind":
+				S.optKind = el.getAttribute("data-kind");
+				if (!S.optKind) { S.optRows = []; saveOptions(); break; }
+				if (!S.optRows.length) S.optRows = [{ label: "", price: "" }];
+				if (S.optRows.some(function (r) { return r.label; })) saveOptions(); else render();
+				break;
+			case "opt-add":
+				S.optRows.push({ label: "", price: "" });
+				render();
+				break;
+			case "opt-chip":
+				var blank = S.optRows.filter(function (r) { return !r.label; })[0];
+				if (blank) blank.label = el.getAttribute("data-label");
+				else S.optRows.push({ label: el.getAttribute("data-label"), price: "" });
+				saveOptions();
+				break;
+			case "opt-remove":
+				S.optRows.splice(Number(el.getAttribute("data-i")), 1);
+				saveOptions();
+				break;
+			case "opt-photo":
+				S.extraLabel = el.getAttribute("data-label");
+				pickPhoto($("#stu-extra"));
+				break;
 			case "generate": generate(Array.from(S.selected)); break;
 			case "retry": generate([el.getAttribute("data-prompt")]); break;
 			case "drop-run":
@@ -721,12 +866,25 @@
 		if (t.matches('[data-act="prompt"]')) {
 			if (t.checked) S.selected.add(t.value); else S.selected.delete(t.value);
 			t.closest(".stu-prompt").classList.toggle("is-on", t.checked);
+			var story = $("#stu-story");
+			if (story) story.innerHTML = storyFields();
 			updateBar();
+			return;
+		}
+		if (t.hasAttribute("data-story")) {
+			S[t.getAttribute("data-story")] = t.value;
+			updateBar();
+			return;
+		}
+		if (t.hasAttribute("data-opt")) {
+			S.optRows[Number(t.getAttribute("data-i"))][t.getAttribute("data-opt")] = t.value;
+			saveOptions();
 			return;
 		}
 		if (t.hasAttribute("data-bind")) {
 			S.form[t.name] = t.type === "checkbox" ? t.checked : t.value;
 			if (t.name === "item_group" || t.name === "item_name") refreshCode();
+			if (t.name === "stock_mode") render();
 		}
 	});
 

@@ -533,6 +533,20 @@
 	.stu-btn, .stu-tile, .stu-switch__ui, .stu-switch__ui::after { transition: none; }
 }
 
+.stu-opts { margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid rgba(31, 27, 22, 0.1); }
+.stu-opts .stu-seg { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stu-opts__h { margin: 0 0 0.5rem; font-size: 0.78rem; font-weight: 600; color: var(--charcoal-soft); letter-spacing: 0.02em; }
+.stu-opt { margin: 0 0 0.75rem; }
+.stu-opt__row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem 44px; gap: 0.5rem; align-items: center; }
+.stu-opt__row input { min-height: 44px; min-width: 0; width: 100%; }
+.stu-opt__del { min-height: 44px; border: 0; background: none; font-size: 1.25rem; color: var(--charcoal-soft); cursor: pointer; }
+.stu-opt__photos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; }
+.stu-opt__photos img { width: 56px; height: 72px; object-fit: cover; border-radius: 6px; }
+.stu-add--sm { width: 56px; height: 72px; min-height: 0; font-size: 0.7rem; }
+.stu-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+.stu-chip--btn { min-height: 36px; padding: 0 0.8rem; border: 1px solid rgba(31, 27, 22, 0.2); background: #fff; cursor: pointer; }
+.stu-run__head h3 small { display: block; font-size: 0.72rem; font-weight: 400; opacity: 0.75; }
+
 @media (min-width: 700px) {
 	.stu-app { padding: 20px 16px 0; gap: 16px; }
 	.stu-card { padding: 22px 22px; }

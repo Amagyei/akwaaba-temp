@@ -155,11 +155,12 @@ def _attach_variant_options(rows):
 			wi.item_code,
 			wi.variant_of,
 			wi.on_backorder,
+			iva.attribute,
 			iva.attribute_value AS size,
 			ip.price_list_rate AS price
 		FROM `tabWebsite Item` wi
 		JOIN `tabItem Variant Attribute` iva
-			ON iva.parent = wi.item_code AND iva.attribute = 'Size'
+			ON iva.parent = wi.item_code AND iva.attribute IN ('Size', 'Colour')
 		LEFT JOIN `tabItem Price` ip
 			ON ip.item_code = wi.item_code
 			AND ip.price_list = %(pl)s
@@ -200,6 +201,7 @@ def _attach_variant_options(rows):
 			for v in opts
 		]
 		r["sold_out"] = bool(opts) and all(o["oos"] for o in r["variant_options"])
+		r["option_word"] = "colour" if any(v.attribute == "Colour" for v in opts) else "size"
 		# "from" price = min price across in-stock variants
 		in_stock_prices = [o["price"] for o in r["variant_options"] if not o["oos"] and o["price"]]
 		if in_stock_prices:

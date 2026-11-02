@@ -808,14 +808,41 @@
 
 		// Gallery thumbnails
 		const hero = pdp.querySelector("#akw-pdp-hero");
-		pdp.querySelectorAll(".akw-pdp__thumb").forEach(function (thumb) {
-			thumb.addEventListener("click", function () {
-				const src = thumb.getAttribute("data-src");
-				if (hero && src) hero.src = src;
-				pdp.querySelectorAll(".akw-pdp__thumb").forEach(function (t) { t.classList.remove("-active"); });
-				thumb.classList.add("-active");
-			});
+		pdp.addEventListener("click", function (e) {
+			const thumb = e.target.closest(".akw-pdp__thumb");
+			if (!thumb) return;
+			const src = thumb.getAttribute("data-src");
+			if (hero && src) hero.src = src;
+			pdp.querySelectorAll(".akw-pdp__thumb").forEach(function (t) { t.classList.remove("-active"); });
+			thumb.classList.add("-active");
 		});
+
+		// A size or colour with its own photos shows them when picked.
+		function showImages(images) {
+			if (!hero || !images.length) return;
+			hero.src = images[0];
+			let strip = pdp.querySelector(".akw-pdp__thumbs");
+			if (!strip) {
+				strip = document.createElement("div");
+				strip.className = "akw-pdp__thumbs";
+				hero.closest(".akw-pdp__hero").after(strip);
+			}
+			strip.hidden = images.length < 2;
+			strip.textContent = "";
+			images.forEach(function (src, i) {
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = "akw-pdp__thumb" + (i ? "" : " -active");
+				btn.setAttribute("data-src", src);
+				btn.setAttribute("aria-label", "View photo " + (i + 1));
+				const img = document.createElement("img");
+				img.src = src;
+				img.alt = "";
+				img.loading = "lazy";
+				btn.appendChild(img);
+				strip.appendChild(btn);
+			});
+		}
 
 		// Size selection
 		pdp.querySelectorAll(".akw-pdp__size").forEach(function (chip) {
@@ -824,6 +851,11 @@
 				pdp.querySelectorAll(".akw-pdp__size").forEach(function (c) { c.classList.remove("-active"); });
 				chip.classList.add("-active");
 				activeCode = chip.getAttribute("data-variant-code");
+				const images = chip.getAttribute("data-images");
+				if (images) showImages(JSON.parse(images));
+				// A picked option has one price, so it's no longer "from".
+				const fromEl = pdp.querySelector(".akw-pdp__from");
+				if (fromEl) fromEl.hidden = true;
 				const disp = chip.getAttribute("data-price-display");
 				if (disp && priceEl) {
 					// data-price-display is "GHS 1,234" — split ccy from amount

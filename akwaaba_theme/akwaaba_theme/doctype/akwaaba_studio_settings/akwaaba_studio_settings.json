@@ -11,6 +11,7 @@
   "default_model",
   "default_image_size",
   "request_timeout",
+  "local_engine_url",
   "style_section",
   "house_style",
   "catalog_section",
@@ -62,6 +63,12 @@
    "fieldname": "request_timeout",
    "fieldtype": "Int",
    "label": "Request Timeout (seconds)"
+  },
+  {
+   "fieldname": "local_engine_url",
+   "fieldtype": "Data",
+   "label": "Local Image Tool URL",
+   "description": "For example http://127.0.0.1:7860 for Draw Things with its API server on. Leave empty to use only Gemini."
   },
   {
    "fieldname": "style_section",

@@ -11,6 +11,7 @@
   "sort_order",
   "column_break_title",
   "hint",
+  "uses_model_arc",
   "prompt_section",
   "prompt",
   "output_section",
@@ -54,6 +55,12 @@
    "fieldname": "hint",
    "fieldtype": "Small Text",
    "label": "Hint"
+  },
+  {
+   "fieldname": "uses_model_arc",
+   "fieldtype": "Check",
+   "label": "Uses Model and Arc",
+   "description": "The form asks for a model and an arc. Write {model} and {arc} in the prompt where they belong."
   },
   {
    "fieldname": "prompt_section",

@@ -45,7 +45,7 @@ class StudioTestCase(IntegrationTestCase):
 		frappe.db.set_single_value(studio.SETTINGS, "enabled", 1)
 		frappe.db.commit()
 		cls.group = frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name", limit=1)[0]
-		cls.prompt = frappe.get_all(studio.PROMPT, filters={"rows": 2, "cols": 2}, pluck="name", limit=1)[0]
+		cls.prompt = frappe.get_all(studio.PROMPT, filters={"rows": 2, "cols": 2, "uses_model_arc": 0}, pluck="name", limit=1)[0]
 
 
 class TestFinalize(StudioTestCase):

@@ -58,7 +58,7 @@ def get_card_videos():
 
 @frappe.whitelist(allow_guest=True)
 def get_variant_options(template_item_code):
-	"""Return the size variants for a template item.
+	"""Return the size or colour variants for a template item.
 
 	Fallback path — the shop grid already embeds this data server-side. Kept
 	whitelisted so future surfaces (PDP, cart, admin previews) can call it
@@ -76,7 +76,7 @@ def get_variant_options(template_item_code):
 			wi.on_backorder AS oos
 		FROM `tabWebsite Item` wi
 		JOIN `tabItem Variant Attribute` iva
-			ON iva.parent = wi.item_code AND iva.attribute = 'Size'
+			ON iva.parent = wi.item_code AND iva.attribute IN ('Size', 'Colour')
 		LEFT JOIN `tabItem Price` ip
 			ON ip.item_code = wi.item_code
 			AND ip.price_list = %(pl)s

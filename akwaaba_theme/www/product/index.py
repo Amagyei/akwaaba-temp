@@ -111,7 +111,7 @@ def _fetch_one(where, values):
 
 
 def _variants(item):
-	"""Size variants for a template item, ordered XS→XXXL. Sets the parent's
+	"""Size or colour variants for a template item, ordered XS→XXXL. Sets the parent's
 	'from' price to the min in-stock variant price (matches the card)."""
 	if not item.get("has_variants"):
 		return []
@@ -119,12 +119,12 @@ def _variants(item):
 	variants = frappe.db.sql(
 		"""
 		SELECT
-			wi.item_code, wi.on_backorder,
-			iva.attribute_value AS size,
+			wi.item_code, wi.on_backorder, wi.website_image, wi.slideshow,
+			iva.attribute, iva.attribute_value AS size,
 			ip.price_list_rate AS price
 		FROM `tabWebsite Item` wi
 		JOIN `tabItem Variant Attribute` iva
-			ON iva.parent = wi.item_code AND iva.attribute = 'Size'
+			ON iva.parent = wi.item_code AND iva.attribute IN ('Size', 'Colour')
 		LEFT JOIN `tabItem Price` ip
 			ON ip.item_code = wi.item_code
 			AND ip.price_list = %(pl)s
@@ -149,9 +149,11 @@ def _variants(item):
 			"size": v.size,
 			"price": float(v.price or 0),
 			"oos": bool(v.on_backorder) or v.item_code in sold_out,
+			"images": _gallery(v),
 		}
 		for v in variants
 	]
+	item["option_word"] = "colour" if any(v.attribute == "Colour" for v in variants) else "size"
 
 	in_stock = [o["price"] for o in opts if not o["oos"] and o["price"]]
 	if in_stock:

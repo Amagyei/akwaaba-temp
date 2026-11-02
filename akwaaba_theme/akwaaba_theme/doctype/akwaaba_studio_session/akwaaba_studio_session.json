@@ -9,6 +9,8 @@
   "status",
   "column_break_status",
   "item",
+  "option_kind",
+  "options_json",
   "est_cost_usd",
   "photos_section",
   "source_image",
@@ -46,6 +48,18 @@
    "label": "Item",
    "options": "Item",
    "read_only": 1
+  },
+  {
+   "fieldname": "option_kind",
+   "fieldtype": "Select",
+   "label": "Comes In",
+   "options": "\nSize\nColour"
+  },
+  {
+   "fieldname": "options_json",
+   "fieldtype": "Long Text",
+   "label": "Options",
+   "hidden": 1
   },
   {
    "fieldname": "est_cost_usd",

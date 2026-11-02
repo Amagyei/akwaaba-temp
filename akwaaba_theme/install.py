@@ -1021,6 +1021,52 @@ STUDIO_PROMPTS = [
 ]
 
 
+STUDIO_STORY_PROMPT = {
+	"title": "Model story — 4 shots",
+	"sort_order": 5,
+	"hint": "Your chosen model and arc, one pose per photo. Shot 4 starts as the main photo.",
+	"uses_model_arc": 1,
+	"rows": 2, "cols": 2, "aspect_ratio": "3:4", "default_main_panel": 4,
+	"prompt": "{story}",
+}
+
+
+def _seed_models_and_arcs():
+	"""The owner's models and arcs. Seeded while empty, so Desk edits stay."""
+	import json
+	import os
+
+	path = os.path.join(os.path.dirname(__file__), "studio", "prompt_library.json")
+	with open(path) as f:
+		library = json.load(f)
+
+	if not frappe.db.count("Akwaaba Studio Model"):
+		for m in library["models"]:
+			frappe.get_doc({
+				"doctype": "Akwaaba Studio Model",
+				"model_name": m["name"],
+				"label": m["label"],
+				"enabled": 1,
+				"profile": (
+					f"An adult Ghanaian woman named {m['name']}. {m['facial_features']} "
+					f"{m['skin']} {m['build']} {m['hair']}"
+				),
+			}).insert(ignore_permissions=True)
+
+	if not frappe.db.count("Akwaaba Studio Arc"):
+		for a in library["arcs"]:
+			frappe.get_doc({
+				"doctype": "Akwaaba Studio Arc",
+				"title": a["title"],
+				"arc_number": a["number"],
+				"enabled": a["enabled"],
+				"skirts_only": a["skirts_only"],
+				"group_name": library["arc_groups"][a["group"]],
+				"summary": a["summary"],
+				**{f"shot_{i}": shot for i, shot in enumerate(a["shots"], start=1)},
+			}).insert(ignore_permissions=True)
+
+
 def ensure_studio_defaults():
 	"""Seed the Studio's starter prompts and house style.
 
@@ -1034,6 +1080,11 @@ def ensure_studio_defaults():
 		for spec in STUDIO_PROMPTS:
 			frappe.get_doc(dict(spec, doctype="Akwaaba Studio Prompt", enabled=1)).insert(ignore_permissions=True)
 			added += 1
+
+	if not frappe.db.exists("Akwaaba Studio Prompt", {"uses_model_arc": 1}):
+		frappe.get_doc(dict(STUDIO_STORY_PROMPT, doctype="Akwaaba Studio Prompt", enabled=1)).insert(ignore_permissions=True)
+		added += 1
+	_seed_models_and_arcs()
 
 	settings = frappe.get_single("Akwaaba Studio Settings")
 	if not (settings.house_style or "").strip():

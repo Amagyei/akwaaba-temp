@@ -2,8 +2,10 @@
 
 Flow:
 	start_session(file)            photo of the garment on a mannequin/hanger
-	generate(session, prompts)     one Gemini call per chosen prompt, in parallel;
-	                               each output is sliced into its grid panels
+	set_options(session, …)        optional sizes or colours; photos carry the label
+	generate(session, prompts, …)  one image call per chosen prompt, in parallel,
+	                               with Gemini or a local tool; each output is sliced
+	                               into its grid panels
 	add_photos / remove_rows       optional supporting photos, drop bad runs
 	finalize(session, data)        new item, or add to an existing one
 
@@ -19,12 +21,17 @@ import frappe
 from frappe.utils import cint, flt, now_datetime, time_diff_in_seconds
 from PIL import Image, ImageOps
 
-from akwaaba_theme.studio import catalog, gemini, slicer
+from akwaaba_theme.studio import catalog, gemini, local_engine, slicer
 
 STUDIO_ROLES = {"System Manager", "Item Manager", "Website Manager"}
 SESSION = "Akwaaba Studio Session"
 SETTINGS = "Akwaaba Studio Settings"
 PROMPT = "Akwaaba Studio Prompt"
+MODEL = "Akwaaba Studio Model"
+ARC = "Akwaaba Studio Arc"
+OPTION_KINDS = ("Size", "Colour")
+ENGINE_GEMINI = "gemini"
+ENGINE_LOCAL = "local"
 STALE_AFTER_SECS = 300  # a "Generating" session older than this was abandoned
 GALLERY_KINDS = ("AI", "AI Raw")
 SUPPORTING_KINDS = ("Original", "Extra")
@@ -48,7 +55,7 @@ def bootstrap():
 	prompts = frappe.get_all(
 		PROMPT,
 		filters={"enabled": 1},
-		fields=["name", "title", "hint", "rows", "cols", "aspect_ratio", "model", "image_size"],
+		fields=["name", "title", "hint", "uses_model_arc", "rows", "cols", "aspect_ratio", "model", "image_size"],
 		order_by="sort_order asc, title asc",
 	)
 	for p in prompts:
@@ -68,8 +75,24 @@ def bootstrap():
 		limit=6,
 	)
 
+	has_gemini = bool(s.get_password("gemini_api_key", raise_exception=False))
+	engines = []
+	if has_gemini:
+		engines.append({"key": ENGINE_GEMINI, "label": "Gemini (paid per image)"})
+	if (s.local_engine_url or "").strip():
+		engines.append({"key": ENGINE_LOCAL, "label": "This computer (free)"})
+
 	return {
-		"configured": bool(cint(s.enabled) and s.get_password("gemini_api_key", raise_exception=False)),
+		"configured": bool(cint(s.enabled) and engines),
+		"engines": engines,
+		"models": frappe.get_all(MODEL, filters={"enabled": 1}, fields=["name", "label"], order_by="model_name asc"),
+		"arcs": frappe.get_all(
+			ARC,
+			filters={"enabled": 1},
+			fields=["name", "arc_number", "group_name", "summary", "skirts_only"],
+			order_by="arc_number asc",
+		),
+		"option_kinds": OPTION_KINDS,
 		"prompts": prompts,
 		"groups": frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name", order_by="name asc"),
 		"default_group": s.default_item_group,
@@ -128,15 +151,54 @@ def start_session():
 
 
 @frappe.whitelist(methods=["POST"])
-def add_photos(session):
-	"""Multipart `file` (repeatable): optional supporting photos."""
+def set_options(session, kind=None, options=None):
+	"""Sizes or colours this piece comes in: `options` is [{label, price}].
+
+	The first photo belongs to the first option until moved. An empty `kind` means
+	one version, and any labels on photos are cleared.
+	"""
 	require_studio_user()
 	sess = _get_session(session, editable=True)
+	options = frappe.parse_json(options) or [] if kind else []
+	if kind and kind not in OPTION_KINDS:
+		frappe.throw("A piece comes in sizes or colours.")
+
+	clean, seen = [], set()
+	for option in options:
+		label = " ".join(str(option.get("label") or "").split())
+		if not label:
+			continue
+		if label.lower() in seen:
+			frappe.throw(f"{label} is listed twice.")
+		seen.add(label.lower())
+		clean.append({"label": label, "price": flt(option.get("price"))})
+
+	labels = [o["label"] for o in clean]
+	for r in sess.images:
+		if r.option_label and r.option_label not in labels:
+			r.option_label = None
+		if r.kind == "Original" and not r.option_label and labels:
+			r.option_label = labels[0]
+
+	sess.option_kind = kind if clean else None
+	sess.options_json = frappe.as_json(clean, indent=None) if clean else None
+	sess.save(ignore_permissions=True)
+	return _payload(sess)
+
+
+@frappe.whitelist(methods=["POST"])
+def add_photos(session, option_label=None):
+	"""Multipart `file` (repeatable): optional supporting photos, or a size or
+	colour's own photos when `option_label` is given."""
+	require_studio_user()
+	sess = _get_session(session, editable=True)
+	if option_label and option_label not in [o["label"] for o in _options(sess)]:
+		frappe.throw(f"{option_label} isn't one of this piece's options.")
 	n = sum(1 for r in sess.images if r.kind == "Extra")
 	for upload in _uploads():
 		n += 1
 		f = _save_file(sess, _normalise(upload.stream.read()), f"extra-{n}")
-		sess.append("images", {"image": f.file_url, "kind": "Extra", "include": 1})
+		sess.append("images", {"image": f.file_url, "kind": "Extra", "include": 1, "option_label": option_label or None})
 	sess.save(ignore_permissions=True)
 	return _payload(sess)
 
@@ -162,11 +224,12 @@ def remove_rows(session, rows):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist(methods=["POST"])
-def generate(session, prompts):
+def generate(session, prompts, model=None, arc=None, engine=None, option_label=None):
 	"""Run each prompt against the source photo; slice and store the results.
 
 	Prompts run in parallel. A failed prompt doesn't sink the others — its
-	error comes back in `errors` and the page offers a retry.
+	error comes back in `errors` and the page offers a retry. With `option_label`,
+	the source is that size or colour's photo and the results carry its label.
 	"""
 	require_studio_user()
 	sess = _get_session(session, editable=True)
@@ -184,13 +247,26 @@ def generate(session, prompts):
 		frappe.throw("Studio is switched off in Akwaaba Studio Settings.")
 	api_key = s.get_password("gemini_api_key", raise_exception=False)
 	timeout = cint(s.request_timeout) or 110
+	local_url = (s.local_engine_url or "").strip()
+	engine = engine or (ENGINE_GEMINI if api_key or not local_url else ENGINE_LOCAL)
+	if engine == ENGINE_LOCAL and not local_url:
+		frappe.throw("No local image tool is set up in Akwaaba Studio Settings.")
+
+	person = frappe.get_doc(MODEL, model) if model else None
+	story = frappe.get_doc(ARC, arc) if arc else None
 
 	jobs = []
 	for name in names:
 		p = frappe.get_doc(PROMPT, name)
-		model, size = _model_for(p, s)
-		jobs.append({"prompt": p, "model": model, "size": size, "text": _full_prompt(p, s)})
-	source = _file_bytes(sess, sess.source_image)
+		if cint(p.uses_model_arc) and not (person and story):
+			frappe.throw(f"Pick a model and an arc for {p.title}.")
+		ai_model, size = _model_for(p, s)
+		jobs.append({
+			"prompt": p, "model": ai_model, "size": size,
+			"text": _full_prompt(p, s, person, story),
+			"label": f"{person.name} · {story.name}" if cint(p.uses_model_arc) else None,
+		})
+	source = _file_bytes(sess, _source_for(sess, option_label))
 
 	# Make "Generating" visible to other requests (the phone may poll if the
 	# connection drops while we wait on Gemini).
@@ -200,6 +276,14 @@ def generate(session, prompts):
 	def run(job):
 		# Worker thread: no frappe calls in here.
 		try:
+			if engine == ENGINE_LOCAL:
+				return local_engine.edit_image(
+					url=local_url,
+					prompt=job["text"],
+					image_bytes=source,
+					aspect_ratio=job["prompt"].aspect_ratio or "3:4",
+					image_size=job["size"],
+				), None
 			return gemini.edit_image(
 				api_key=api_key,
 				model=job["model"],
@@ -227,9 +311,10 @@ def generate(session, prompts):
 				errors.append({"prompt": p.name, "title": p.title, "error": err})
 				continue
 			run_no += 1
-			cost += gemini.estimate_cost(job["model"], job["size"])
+			if engine != ENGINE_LOCAL:
+				cost += gemini.estimate_cost(job["model"], job["size"])
 			try:
-				_store_run(sess, p, run_no, data)
+				_store_run(sess, p, run_no, data, job["label"], option_label)
 			except Exception as e:
 				frappe.log_error(title=f"Studio: couldn't slice {p.name}")
 				errors.append({"prompt": p.name, "title": p.title, "error": f"Couldn't process the image: {e}"})
@@ -251,7 +336,7 @@ def generate(session, prompts):
 	return out
 
 
-def _store_run(sess, prompt, run_no, data):
+def _store_run(sess, prompt, run_no, data, run_label=None, option_label=None):
 	img = Image.open(io.BytesIO(data))
 	img.load()
 	panels, seams_ok = slicer.slice_grid(img, prompt.rows, prompt.cols)
@@ -263,6 +348,7 @@ def _store_run(sess, prompt, run_no, data):
 		sess.append("images", {
 			"image": raw.file_url, "kind": "AI Raw", "prompt": prompt.name,
 			"run": run_no, "panel": 0, "include": 0,
+			"run_label": run_label, "option_label": option_label or None,
 			"note": None if seams_ok else (
 				"Couldn't see where the panels meet, so they were cut at the exact "
 				"middle. Check the crops, or use the whole image instead."
@@ -274,6 +360,7 @@ def _store_run(sess, prompt, run_no, data):
 		sess.append("images", {
 			"image": f.file_url, "kind": "AI", "prompt": prompt.name,
 			"run": run_no, "panel": i, "include": 1,
+			"run_label": run_label, "option_label": option_label or None,
 			"is_main": 1 if (not has_main and i == main_panel) else 0,
 		})
 
@@ -333,15 +420,25 @@ def finalize(session, data):
 		if not data.get("item_group"):
 			frappe.throw("Pick a category.")
 		item_code = (data.get("item_code") or "").strip() or catalog.suggest_item_code(data.item_group, item_name)
-		wi = catalog.create_item(
+		common = dict(
 			item_code=item_code,
 			item_name=item_name,
 			item_group=data.item_group,
 			price=flt(data.get("price")),
 			description=(data.get("description") or "").strip(),
 			publish=bool(cint(data.get("publish"))),
-			**kw,
+			is_stock_item=1 if data.get("stock_mode") == "limited" else 0,
 		)
+		options = _options(sess)
+		if options:
+			wi = catalog.create_item_with_options(
+				kind=sess.option_kind,
+				options=_option_photos(sess, options, gallery, supporting, main, files),
+				**common,
+				**_shared_photos(gallery, supporting, main, files),
+			)
+		else:
+			wi = catalog.create_item(**common, **kw)
 		title = item_name
 
 	sess.item = item_code
@@ -398,8 +495,12 @@ def _model_for(prompt, s):
 	return model, gemini.resolve_size(model, size)
 
 
-def _full_prompt(prompt, s):
-	parts = [(prompt.prompt or "").strip()]
+def _full_prompt(prompt, s, person=None, story=None):
+	text = (prompt.prompt or "").strip()
+	if cint(prompt.uses_model_arc):
+		text = text.replace("{story}", _full_story(prompt, person, story))
+		text = text.replace("{model}", person.profile)
+	parts = [text]
 	rows, cols = max(1, cint(prompt.rows)), max(1, cint(prompt.cols))
 	if rows * cols > 1:
 		# Spelled out on every grid prompt because the slicer depends on it.
@@ -412,6 +513,67 @@ def _full_prompt(prompt, s):
 	if (s.house_style or "").strip():
 		parts.append(s.house_style.strip())
 	return "\n\n".join(parts)
+
+
+def _full_story(prompt, person, story):
+	"""The owner's master template, with the uploaded photo as the wardrobe."""
+	with open(frappe.get_app_path("akwaaba_theme", "studio", "prompt_library.json")) as f:
+		template = frappe.parse_json(f.read())["template"]
+	shots = "\n".join(
+		f"- {place} frame (Shot {i}): {story.get(f'shot_{i}')}"
+		for i, place in enumerate(("Top-left", "Top-right", "Bottom-left", "Bottom-right"), start=1)
+	)
+	return "\n\n".join((
+		template["format"],
+		f"[MODEL]\n{person.profile}",
+		f"[WARDROBE]\n{template['wardrobe']}",
+		f"[LIGHTING & SET]\n{template['lighting_set']}",
+		f"[DIRECTORIAL NARRATIVE ARC: {story.name}]\n{shots}",
+		f"[STYLE & RENDERING]\n{template['style']}",
+	))
+
+
+def _options(sess):
+	return frappe.parse_json(sess.options_json) or [] if sess.options_json else []
+
+
+def _source_for(sess, option_label):
+	if not option_label:
+		return sess.source_image
+	for r in sess.images:
+		if r.kind in SUPPORTING_KINDS and r.option_label == option_label:
+			return r.image
+	frappe.throw(f"Add a photo for {option_label} first.")
+
+
+def _shared_photos(gallery, supporting, main, files):
+	"""Photos with no size or colour on them go on the template. With none, the
+	template shows the first photos kept, so its page isn't empty."""
+	shared = [r for r in gallery if not r.option_label] or gallery[:1]
+	keep_main = main if main in shared else shared[0]
+	return dict(
+		gallery=[files[r.name] for r in shared],
+		supporting=[files[r.name] for r in supporting if not r.option_label],
+		main=files[keep_main.name],
+	)
+
+
+def _option_photos(sess, options, gallery, supporting, main, files):
+	out = []
+	for option in options:
+		mine = [r for r in gallery if r.option_label == option["label"]]
+		extras = [r for r in supporting if r.option_label == option["label"]]
+		if not mine and extras:
+			# Only its own plain photos were kept, so the first one leads.
+			mine, extras = extras[:1], extras[1:]
+		lead = main if main in mine else (mine[0] if mine else None)
+		out.append(dict(
+			option,
+			gallery=[files[r.name] for r in mine],
+			supporting=[files[r.name] for r in extras],
+			main=files[lead.name] if lead else None,
+		))
+	return out
 
 
 def _get_session(name, editable=False):
@@ -480,7 +642,7 @@ def _file_name(sess, url):
 
 
 def _file_bytes(sess, url):
-	return frappe.get_doc("File", _file_name(sess, url)).get_content()
+	return catalog.file_bytes(frappe.get_doc("File", _file_name(sess, url)))
 
 
 def _payload(sess):
@@ -495,6 +657,8 @@ def _payload(sess):
 			"title": titles.get(r.prompt, r.prompt),
 			"raw": None,
 			"note": None,
+			"label": r.run_label,
+			"option": r.option_label,
 			"panels": [],
 		})
 		if r.kind == "AI Raw":
@@ -514,6 +678,8 @@ def _payload(sess):
 		"source": sess.source_image,
 		"runs": [runs[k] for k in sorted(runs)],
 		"supporting": [_row(r) for r in sess.images if r.kind in SUPPORTING_KINDS],
+		"option_kind": sess.option_kind,
+		"options": _options(sess),
 		"last_error": sess.last_error,
 	}
 
@@ -526,4 +692,5 @@ def _row(r):
 		"panel": cint(r.panel),
 		"include": cint(r.include),
 		"main": cint(r.is_main),
+		"option": r.option_label,
 	}

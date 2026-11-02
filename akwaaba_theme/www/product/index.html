@@ -66,8 +66,8 @@
 
 		{% if item.has_variants and variant_options %}
 		<div class="akw-pdp__sizes-block">
-			<div class="akw-pdp__sizes-label">Select size</div>
-			<div class="akw-pdp__sizes" role="group" aria-label="Select size">
+			<div class="akw-pdp__sizes-label">Select {{ item.option_word or 'size' }}</div>
+			<div class="akw-pdp__sizes" role="group" aria-label="Select {{ item.option_word or 'size' }}">
 				{% for v in variant_options %}
 					<button type="button"
 						class="akw-pdp__size{% if v.oos %} -oos{% endif %}"
@@ -75,12 +75,13 @@
 						data-size="{{ v.size }}"
 						data-price-display="{{ currency }} {{ '{:,.0f}'.format(v.price or 0) }}"
 						data-oos="{{ 1 if v.oos else 0 }}"
+						{% if v.images %}data-images='{{ v.images | tojson }}'{% endif %}
 						{% if v.oos %}aria-disabled="true" title="Out of stock"{% endif %}>
 						{{ v.size }}
 					</button>
 				{% endfor %}
 			</div>
-			<div class="akw-pdp__hint" hidden>Please select a size.</div>
+			<div class="akw-pdp__hint" hidden>Please select a {{ item.option_word or 'size' }}.</div>
 		</div>
 		{% endif %}
 

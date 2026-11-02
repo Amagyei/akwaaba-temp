@@ -13,7 +13,9 @@
   "panel",
   "include",
   "is_main",
-  "note"
+  "note",
+  "option_label",
+  "run_label"
  ],
  "fields": [
   {
@@ -71,6 +73,17 @@
    "fieldtype": "Small Text",
    "label": "Note",
    "read_only": 1
+  },
+  {
+   "fieldname": "option_label",
+   "fieldtype": "Data",
+   "label": "Size or Colour",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "run_label",
+   "fieldtype": "Data",
+   "label": "Made With"
   }
  ],
  "istable": 1,

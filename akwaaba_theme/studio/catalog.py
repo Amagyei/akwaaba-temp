@@ -81,7 +81,7 @@ def unique_route(base):
 # ---------------------------------------------------------------------------
 
 def create_item(*, item_code, item_name, item_group, price=None, description="",
-		publish=False, gallery=(), supporting=(), main=None):
+		publish=False, gallery=(), supporting=(), main=None, is_stock_item=0):
 	"""New Item + Website Item (+ slideshow, price). Returns the Website Item doc.
 
 	gallery / supporting are File doc names; main is a File name from gallery.
@@ -100,7 +100,7 @@ def create_item(*, item_code, item_name, item_group, price=None, description="",
 		"item_name": item_name,
 		"item_group": item_group,
 		"stock_uom": "Nos",
-		"is_stock_item": 0,
+		"is_stock_item": 1 if is_stock_item else 0,
 		"include_item_in_manufacturing": 0,
 		"description": description or item_name,
 	}).insert(ignore_permissions=True)
@@ -117,6 +117,72 @@ def create_item(*, item_code, item_name, item_group, price=None, description="",
 	wi.insert(ignore_permissions=True)
 
 	_add_photos(item, wi, gallery=gallery, supporting=supporting, main=main, set_main=True)
+	return wi
+
+
+def create_item_with_options(*, item_code, item_name, item_group, kind, options, price=None,
+		description="", publish=False, gallery=(), supporting=(), main=None, is_stock_item=0):
+	"""A template item plus one variant per size or colour, each with its own photos.
+
+	options: [{label, price, gallery, supporting, main}], files as File names.
+	Returns the template's Website Item doc.
+	"""
+	from erpnext.controllers.item_variant import create_variant
+	from webshop.webshop.doctype.website_item.website_item import make_website_item
+
+	from akwaaba_theme.catalog_sync.api import apply_attribute_value
+
+	item_code = (item_code or "").strip()
+	if not item_code:
+		frappe.throw("Item code is required.")
+	if frappe.db.exists("Item", item_code):
+		frappe.throw(f"Item {item_code} already exists — pick another code or add photos to it instead.")
+	if publish and any(not flt(o.get("price") or price) for o in options):
+		frappe.throw("Set a price for every option before publishing.")
+
+	for option in options:
+		apply_attribute_value(kind, option["label"])
+
+	template = frappe.get_doc({
+		"doctype": "Item",
+		"item_code": item_code,
+		"item_name": item_name,
+		"item_group": item_group,
+		"stock_uom": "Nos",
+		"is_stock_item": 1 if is_stock_item else 0,
+		"include_item_in_manufacturing": 0,
+		"description": description or item_name,
+		"has_variants": 1,
+		"variant_based_on": "Item Attribute",
+		"attributes": [{"attribute": kind}],
+	}).insert(ignore_permissions=True)
+
+	wi = make_website_item(template, save=False)
+	wi.route = unique_route(slugify(item_name))
+	wi.published = 1 if publish else 0
+	wi.short_description = description or ""
+	wi.insert(ignore_permissions=True)
+	_add_photos(template, wi, gallery=gallery, supporting=supporting, main=main, set_main=True)
+
+	for option in options:
+		variant = create_variant(item_code, {kind: option["label"]})
+		variant.item_name = f"{item_name} — {option['label']}"
+		variant.insert(ignore_permissions=True)
+		if flt(option.get("price") or price):
+			_set_price(variant.name, option.get("price") or price)
+
+		variant_wi = make_website_item(variant, save=False)
+		variant_wi.route = unique_route(slugify(f"{item_name} {option['label']}"))
+		variant_wi.published = 1 if publish else 0
+		variant_wi.short_description = description or ""
+		variant_wi.insert(ignore_permissions=True)
+		_add_photos(
+			variant, variant_wi,
+			gallery=option.get("gallery") or (),
+			supporting=option.get("supporting") or (),
+			main=option.get("main"),
+			set_main=True,
+		)
 	return wi
 
 
@@ -208,9 +274,16 @@ def _publish_file(file_name, doctype, docname, public_name):
 		"attached_to_doctype": doctype,
 		"attached_to_name": docname,
 		"is_private": 0,
-		"content": _web_copy(src.get_content()),
+		"content": _web_copy(file_bytes(src)),
 		"decode": False,
 	}).insert(ignore_permissions=True).file_url
+
+
+def file_bytes(file_doc):
+	"""A File's raw bytes. File.get_content() tries text encodings first, and a
+	simple JPEG can come back from that as a str."""
+	with open(file_doc.get_full_path(), "rb") as f:
+		return f.read()
 
 
 def _web_copy(content):
