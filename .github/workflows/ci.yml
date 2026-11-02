@@ -108,7 +108,8 @@ jobs:
           # Annotations can be read without signing in to GitHub.
           for f in "$HOME"/ci-logs/*.log; do
             [ -f "$f" ] || continue
-            tail -n 40 "$f" | cut -c1-200 | grep -v '^$' | tail -n 25 | while IFS= read -r line; do
+            # Where it broke, then how it ended.
+            { grep -E '^ *File "|^(FAIL|ERROR|[A-Za-z_.]*Error)|✖' "$f" | tail -n 30; tail -n 12 "$f"; } | cut -c1-200 | grep -v '^$' | while IFS= read -r line; do
               echo "::error title=$(basename "$f")::${line//%/%25}"
             done
           done

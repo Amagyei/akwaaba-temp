@@ -93,7 +93,6 @@
    "options": "Item Group"
   },
   {
-   "default": "Akwaaba Retail",
    "fieldname": "price_list",
    "fieldtype": "Link",
    "label": "Price List",
