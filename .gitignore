@@ -57,3 +57,6 @@ jspm_packages/
 # Claude Code
 .claude/
 .claude-session*
+
+# Local code graph
+graphify-out/
