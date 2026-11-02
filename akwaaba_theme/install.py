@@ -45,7 +45,14 @@ def ensure_schema():
 		_ensure_reverse_order_client_script()
 	if not frappe.db.exists("Client Script", _MOMO_CONFIRM_CLIENT_SCRIPT_NAME):
 		_ensure_momo_confirm_client_script()
+	_ensure_catalog_sync_role()
 	frappe.db.commit()
+
+
+def _ensure_catalog_sync_role():
+	"""A role with no DocType rights at all; see catalog_sync/api.py."""
+	if not frappe.db.exists("Role", "Catalog Sync"):
+		frappe.get_doc({"doctype": "Role", "role_name": "Catalog Sync", "desk_access": 0}).insert(ignore_permissions=True)
 
 
 # ---------------------------------------------------------------------------
