@@ -372,8 +372,46 @@
 	function bindCheckoutSubmit() {
 		const form = document.querySelector(".akw-cart__form");
 		if (!form) return;
+
+		function clearFieldError(el) {
+			el.removeAttribute("aria-invalid");
+			const note = el.closest("label") && el.closest("label").querySelector(".akw-cart__field-error");
+			if (note) note.remove();
+		}
+		form.addEventListener("input", function (e) {
+			if (e.target.hasAttribute("aria-invalid")) clearFieldError(e.target);
+		});
+
 		form.addEventListener("submit", function (e) {
 			e.preventDefault();
+			const msg = form.querySelector(".akw-cart__error");
+			if (msg) { msg.hidden = true; msg.textContent = ""; }
+
+			// Name the first empty/invalid field instead of a round trip that
+			// can only answer "Order failed". The note sits under the field
+			// because focusing it scrolls the bottom message off a phone screen.
+			form.querySelectorAll("[aria-invalid]").forEach(clearFieldError);
+			const bad = Array.prototype.find.call(form.querySelectorAll("[required]"), function (el) {
+				return !el.value.trim() || !el.checkValidity();
+			});
+			if (bad) {
+				const label = bad.closest("label");
+				const name = label
+					? label.querySelector("span").textContent.replace("*", "").trim().toLowerCase().replace("whatsapp", "WhatsApp")
+					: "details";
+				const text = bad.value.trim() ? "Please check your " + name + "." : "Please add your " + name + ".";
+				bad.setAttribute("aria-invalid", "true");
+				if (label) {
+					const note = document.createElement("small");
+					note.className = "akw-cart__field-error";
+					note.textContent = text;
+					label.appendChild(note);
+				}
+				if (msg) { msg.textContent = text; msg.hidden = false; } else { alert(text); }
+				bad.focus();
+				return;
+			}
+
 			const submitBtn = form.querySelector('button[type="submit"]');
 			if (submitBtn) {
 				submitBtn.disabled = true;
@@ -412,7 +450,10 @@
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
 				.then(function (res) {
 					if (!res.ok || !res.body || !res.body.message) {
-						throw new Error((res.body && res.body.exception) || "Order failed");
+						throw new Error(
+							(res.body && res.body._server_messages) ||
+							"We couldn't place your order. Please try again."
+						);
 					}
 					const order = res.body.message;
 					// Clear cart cookie
@@ -421,31 +462,62 @@
 				})
 				.catch(function (err) {
 					if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove("is-loading"); }
-					const msg = form.querySelector(".akw-cart__error");
+					const text = _readableError(err.message);
 					if (msg) {
-						msg.textContent = err.message || "Something went wrong.";
+						msg.textContent = text;
 						msg.hidden = false;
 					} else {
-						alert(err.message || "Something went wrong.");
+						alert(text);
 					}
 				});
 		});
 	}
 
 	// =======================================================================
-	// NEWSLETTER (unchanged)
+	// NEWSLETTER — saves to the "Ntoma List" Email Group
 	// =======================================================================
 	document.addEventListener("submit", function (e) {
 		const form = e.target;
 		if (!form.matches(".akwaaba-newsletter__form")) return;
 		e.preventDefault();
 		const input = form.querySelector("input");
-		if (window.frappe && frappe.show_alert) {
-			frappe.show_alert({ message: "Medaase! We'll be in touch soon.", indicator: "green" });
-		} else {
-			alert("Medaase! We'll be in touch soon.");
+		const btn = form.querySelector("button");
+		const status = form.parentElement.querySelector(".akwaaba-newsletter__status");
+		const say = function (text, isError) {
+			if (!status) { alert(text); return; }
+			status.textContent = text;
+			status.classList.toggle("-error", !!isError);
+			status.hidden = false;
+		};
+
+		if (!input.value.trim() || !input.checkValidity()) {
+			say("Please enter a valid email address.", true);
+			input.focus();
+			return;
 		}
-		if (input) input.value = "";
+		btn.disabled = true;
+
+		fetch("/api/method/akwaaba_theme.api.subscribe_newsletter", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded",
+				"X-Requested-With": "XMLHttpRequest",
+				"X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || "",
+			},
+			credentials: "same-origin",
+			body: new URLSearchParams({ email: input.value.trim() }).toString(),
+		})
+			.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; }); })
+			.then(function (res) {
+				if (res.status === 429) throw new Error("Too many tries — please wait a little and try again.");
+				if (!res.ok) throw new Error((res.body && res.body._server_messages) || "");
+				say("Medaase! You're on the Ntoma list.");
+				input.value = "";
+			})
+			.catch(function (err) {
+				say(_readableError(err.message || "We couldn't add you just now. Please try again."), true);
+			})
+			.finally(function () { btn.disabled = false; });
 	});
 
 	// =======================================================================

@@ -192,6 +192,10 @@
 		</div>
 
 		<div class="akw-order__actions">
+			{% if akw_contact and akw_contact.whatsapp %}
+			<a href="https://wa.me/{{ akw_contact.whatsapp }}?text={{ ('Hi Serwa Kollections, about my order ' ~ order.name ~ ':')|urlencode }}"
+				class="akw-order__cta -whatsapp" target="_blank" rel="noopener">Message us on WhatsApp</a>
+			{% endif %}
 			<a href="/shop" class="akw-order__cta">Keep exploring</a>
 			<a href="/" class="akw-order__cta -outline">Back home</a>
 		</div>
@@ -216,7 +220,7 @@
 
 <div class="kente-strip -thin"></div>
 
-{{ akwaaba_footer(akw_nav_collections) }}
+{{ akwaaba_footer(akw_nav_collections, akw_contact) }}
 
 {% endblock %}
 

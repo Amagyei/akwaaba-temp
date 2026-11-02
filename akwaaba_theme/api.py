@@ -3,6 +3,7 @@
 - get_card_videos              : hover-video map for product cards
 - place_order                  : the guest checkout endpoint
 - get_order                    : light order status lookup
+- subscribe_newsletter         : homepage "Ntoma list" signup → Email Group
 - init_paystack_payment        : creates a Paystack transaction, returns checkout URL
 - verify_paystack_payment      : server-side verification of a Paystack reference
 - paystack_webhook             : Paystack event receiver (charge.success, etc.)
@@ -15,6 +16,7 @@ import re
 
 import frappe
 import requests
+from frappe.rate_limiter import rate_limit
 from frappe.utils import flt
 
 
@@ -208,9 +210,9 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 def get_order(name):
 	"""Return a small, sanitized order summary for the confirmation page.
 
-	Only returns totals + item list — no PII beyond what the anonymous
-	visitor already provided at checkout. If your threat model needs it,
-	tighten this with a per-order signed token.
+	Only returns totals + item list. Order names are sequential and this is
+	open to guests, so it must never return the customer, phone or email —
+	anyone could walk SAL-ORD-…-00001, 00002, … and harvest contacts.
 	"""
 	if not name:
 		frappe.throw("No order specified.")
@@ -218,9 +220,8 @@ def get_order(name):
 	so = frappe.db.get_value(
 		"Sales Order", name,
 		[
-			"name", "customer", "status", "docstatus",
+			"name", "status", "docstatus",
 			"grand_total", "total", "currency", "transaction_date",
-			"contact_mobile", "contact_email",
 		],
 		as_dict=True,
 	)
@@ -235,6 +236,50 @@ def get_order(name):
 	)
 	so["items"] = items
 	return so
+
+
+# ---------------------------------------------------------------------------
+# Newsletter — "Join the Ntoma list" on the homepage
+# ---------------------------------------------------------------------------
+
+NEWSLETTER_GROUP = "Ntoma List"
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=5, seconds=60 * 60)
+def subscribe_newsletter(email):
+	"""Add an email to the Ntoma list, an Email Group admins manage in Desk.
+
+	An address that unsubscribed earlier is switched back on; one already on
+	the list is a quiet success, so the form never reveals who is subscribed.
+	"""
+	from frappe.utils import validate_email_address
+
+	email = validate_email_address(_clean(email).lower(), throw=True)
+
+	if not frappe.db.exists("Email Group", NEWSLETTER_GROUP):
+		frappe.get_doc({"doctype": "Email Group", "title": NEWSLETTER_GROUP}).insert(ignore_permissions=True)
+
+	member = frappe.db.get_value(
+		"Email Group Member",
+		{"email_group": NEWSLETTER_GROUP, "email": email},
+		["name", "unsubscribed"],
+		as_dict=True,
+	)
+	if member:
+		if member.unsubscribed:
+			frappe.db.set_value("Email Group Member", member.name, "unsubscribed", 0)
+		return {"ok": True}
+
+	try:
+		frappe.get_doc({
+			"doctype": "Email Group Member",
+			"email_group": NEWSLETTER_GROUP,
+			"email": email,
+		}).insert(ignore_permissions=True)
+	except frappe.DuplicateEntryError:
+		pass  # a double-tap raced us to the same row
+	return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,8 @@ Loads collections (Item Groups) and their display metadata from the backend
 so templates never hardcode category names, URLs, or presentation labels.
 """
 
+import re
+
 import frappe
 
 
@@ -134,9 +136,33 @@ def get_hero_slides(limit=6):
 	return slides
 
 
+def get_shop_contact():
+	"""Public contact details from Desk → Contact Us Settings.
+
+	`whatsapp` is the phone in wa.me form (digits, country code first; a
+	local 0XX number is read as Ghanaian). Empty values mean "not set", and
+	templates hide the WhatsApp/email links rather than show a dead one.
+	"""
+	phone = frappe.db.get_single_value("Contact Us Settings", "phone") or ""
+	email = frappe.db.get_single_value("Contact Us Settings", "email_id") or ""
+
+	digits = re.sub(r"\D", "", phone)
+	if digits.startswith("00"):
+		digits = digits[2:]
+	elif digits.startswith("0") and len(digits) == 10:
+		digits = "233" + digits[1:]
+
+	return frappe._dict(
+		whatsapp=digits if 9 <= len(digits) <= 15 else "",
+		phone=phone.strip(),
+		email=email.strip(),
+	)
+
+
 def with_shared_context(context):
 	"""Populate context vars that every Akwaaba page needs (nav + footer)."""
 	context.akw_all_collections = get_shop_collections()
 	context.akw_nav_collections = get_shop_collections(nav_only=True)
 	context.akw_homepage_collections = get_shop_collections(homepage_only=True)
+	context.akw_contact = get_shop_contact()
 	return context

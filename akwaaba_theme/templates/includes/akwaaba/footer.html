@@ -1,8 +1,9 @@
 {#-
-	Akwaaba footer macro. Descriptive block only — no nav links.
+	Akwaaba footer macro. Descriptive block plus "Talk to us" contact links
+	(from Contact Us Settings via context.get_shop_contact; hidden when unset).
 -#}
 
-{% macro akwaaba_footer(nav_collections=None) -%}
+{% macro akwaaba_footer(nav_collections=None, contact=None) -%}
 <footer class="akwaaba-footer">
 	<div class="akwaaba-footer__grid">
 		<div>
@@ -14,6 +15,20 @@
 				and modern Ankara — with proverbs sewn in.
 			</div>
 		</div>
+
+		{% if contact and (contact.whatsapp or contact.email) %}
+		<div>
+			<h5>Talk to us</h5>
+			<ul>
+				{% if contact.whatsapp %}
+				<li><a href="https://wa.me/{{ contact.whatsapp }}" target="_blank" rel="noopener">WhatsApp · {{ contact.phone }}</a></li>
+				{% endif %}
+				{% if contact.email %}
+				<li><a href="mailto:{{ contact.email }}">{{ contact.email }}</a></li>
+				{% endif %}
+			</ul>
+		</div>
+		{% endif %}
 	</div>
 
 	<div class="akwaaba-footer__bottom">

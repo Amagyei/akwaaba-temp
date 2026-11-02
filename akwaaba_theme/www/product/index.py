@@ -38,7 +38,7 @@ def get_context(context):
 
 	context.item = item
 	context.gallery = _gallery(item)
-	context.attachments = _attachments(item)
+	context.attachments = _attachments(item, exclude=context.gallery)
 	context.specs = _specs(item.get("name"))
 	context.description = item.get("web_long_description") or item.get("description") or ""
 	context.currency = "GHS"
@@ -180,18 +180,19 @@ def _gallery(item):
 	return imgs
 
 
-def _attachments(item):
+def _attachments(item, exclude=()):
 	"""Public file attachments on the item's Item + Website Item documents.
 
 	Distinct from _gallery(): that's the curated hero/slideshow; this is
 	whatever files the admin attached to the document directly, shown as a
-	simple "Gallery" strip further down the page.
+	simple "Gallery" strip further down the page. Photos already in the top
+	gallery are skipped (setting Item.image auto-attaches the hero file).
 	"""
 	targets = [("Item", item.get("item_code"))]
 	if item.get("name"):
 		targets.append(("Website Item", item["name"]))
 
-	seen = set()
+	seen = set(exclude or ())
 	files = []
 	for doctype, name in targets:
 		if not name:

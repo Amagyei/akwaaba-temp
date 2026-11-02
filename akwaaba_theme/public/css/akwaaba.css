@@ -1330,6 +1330,13 @@ img { max-width: 100%; height: auto; display: block; }
 	background: var(--kente-gold-deep);
 	border-color: var(--kente-gold-deep);
 }
+.akwaaba-newsletter__form button:disabled { opacity: 0.6; cursor: wait; }
+.akwaaba-newsletter__status {
+	margin: 0.9rem 0 0;
+	font-size: 0.9rem;
+	color: var(--kente-green);
+}
+.akwaaba-newsletter__status.-error { color: var(--kente-red); }
 
 /* ============================================================================
    FOOTER
@@ -2656,6 +2663,8 @@ body[data-path="cart"] main {
 }
 .akw-cart__field input:focus,
 .akw-cart__field textarea:focus { border-color: var(--kente-gold-deep); }
+.akw-cart__field :is(input, textarea)[aria-invalid="true"] { border-color: var(--kente-red); }
+.akw-cart__field-error { color: var(--kente-red); font-size: 0.8rem; }
 .akw-cart__field textarea { min-height: 60px; }
 .akw-cart__field-row {
 	display: grid;
@@ -2844,6 +2853,12 @@ body[data-path="cart"] main {
 	border: 1px solid var(--charcoal);
 }
 .akw-order__cta.-outline:hover { background: var(--charcoal); color: var(--cream) !important; }
+.akw-order__cta.-whatsapp {
+	flex-basis: 100%;
+	background: var(--kente-green);
+	border-color: var(--kente-green);
+}
+.akw-order__cta.-whatsapp:hover { background: var(--charcoal); border-color: var(--charcoal); }
 .akw-order__note {
 	margin-top: var(--space-xl);
 	padding: 1rem;

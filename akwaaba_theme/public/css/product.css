@@ -129,6 +129,14 @@
 .akw-pdp__add.-added { background: var(--kente-green); }
 .akw-pdp__add.-added a { color: var(--cream); text-decoration: underline; }
 
+/* WhatsApp question link under Add to cart */
+.akw-pdp__ask {
+	display: flex; width: fit-content; align-items: center;
+	min-height: var(--tap, 44px); margin-top: 0.5rem;
+	font-size: 0.85rem; color: var(--kente-green) !important;
+	text-decoration: underline !important; text-underline-offset: 3px;
+}
+
 /* description + specs */
 .akw-pdp__desc {
 	margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
