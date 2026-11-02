@@ -45,6 +45,7 @@ def ensure_item(item_code, item_name, price=None):
 		wi = make_website_item(frappe.get_doc("Item", item_code), save=False)
 		wi.published = 1
 		wi.insert(ignore_permissions=True)
+	frappe.db.set_value("Website Item", {"item_code": item_code}, "published", 1)
 	if price and not frappe.db.exists("Item Price", {"item_code": item_code, "price_list": PRICE_LIST}):
 		frappe.get_doc({
 			"doctype": "Item Price",
@@ -147,3 +148,28 @@ def ledger_imbalance(vouchers):
 		(tuple(vouchers),),
 	)
 	return round(float(row[0][0]), 2)
+
+
+def make_tracked_item(qty, price=PRICE):
+	"""A new one-of-a-kind style piece with `qty` on the shelf."""
+	from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
+
+	company = ensure_company()
+	warehouse = frappe.db.get_value("Warehouse", {"company": company, "warehouse_name": "Stores", "is_group": 0})
+	frappe.db.set_single_value("Stock Settings", "default_warehouse", warehouse)
+	code = "AKW-TRACKED-" + frappe.generate_hash(length=6).upper()
+	group = frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name", limit=1)[0]
+	frappe.get_doc({
+		"doctype": "Item",
+		"item_code": code,
+		"item_name": f"Tracked {code}",
+		"item_group": group,
+		"stock_uom": "Nos",
+		"is_stock_item": 1,
+		"valuation_rate": 100,
+	}).insert(ignore_permissions=True)
+	ensure_item(code, f"Tracked {code}", price)
+	if qty:
+		make_stock_entry(item_code=code, qty=qty, to_warehouse=warehouse, rate=100, company=company)
+	frappe.db.commit()
+	return code

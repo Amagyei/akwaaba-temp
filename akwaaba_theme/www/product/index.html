@@ -33,7 +33,7 @@
 		{% if gallery %}
 			<div class="akw-pdp__hero">
 				<img id="akw-pdp-hero" src="{{ gallery[0] }}" alt="{{ product_title }}" loading="eager" decoding="async">
-				{% if item.on_backorder %}<span class="akw-pdp__flag">Backorder</span>{% endif %}
+				{% if sold_out %}<span class="akw-pdp__flag">Sold out</span>{% elif item.on_backorder %}<span class="akw-pdp__flag">Backorder</span>{% endif %}
 			</div>
 			{% if gallery|length > 1 %}
 			<div class="akw-pdp__thumbs">
@@ -84,7 +84,11 @@
 		</div>
 		{% endif %}
 
+		{% if sold_out %}
+		<button type="button" class="akw-pdp__add" data-sold-out="1" disabled>Sold out</button>
+		{% else %}
 		<button type="button" class="akw-pdp__add">Add to cart</button>
+		{% endif %}
 
 		{% if akw_contact and akw_contact.whatsapp %}
 		<a class="akw-pdp__ask" target="_blank" rel="noopener"

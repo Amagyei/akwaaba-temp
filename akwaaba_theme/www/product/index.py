@@ -13,6 +13,7 @@ Route rule (hooks.py):
 import frappe
 
 from akwaaba_theme.context import with_shared_context
+from akwaaba_theme.stock import sold_out_codes
 
 DEFAULT_PRICE_LIST = "Akwaaba Retail"
 _SIZE_ORDER = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"]
@@ -44,7 +45,8 @@ def get_context(context):
 	context.currency = "GHS"
 	context.price = item.get("price")
 	context.price_from = bool(item.get("price_from"))
-	context.in_stock = not item.get("on_backorder")
+	context.sold_out = _sold_out(item, context.variant_options)
+	context.in_stock = not (item.get("on_backorder") or context.sold_out)
 	context.preselect_size = item.get("preselect_size")
 	context.crumbs = _crumbs(item)
 
@@ -140,12 +142,13 @@ def _variants(item):
 			return 999
 
 	variants.sort(key=_size_key)
+	sold_out = sold_out_codes([v.item_code for v in variants])
 	opts = [
 		{
 			"code": v.item_code,
 			"size": v.size,
 			"price": float(v.price or 0),
-			"oos": bool(v.on_backorder),
+			"oos": bool(v.on_backorder) or v.item_code in sold_out,
 		}
 		for v in variants
 	]
@@ -178,6 +181,12 @@ def _gallery(item):
 			if r.image and r.image not in imgs:
 				imgs.append(r.image)
 	return imgs
+
+
+def _sold_out(item, variant_options):
+	if item.get("has_variants") and variant_options:
+		return all(o["oos"] for o in variant_options)
+	return item.get("item_code") in sold_out_codes([item.get("item_code")])
 
 
 def _description(item):

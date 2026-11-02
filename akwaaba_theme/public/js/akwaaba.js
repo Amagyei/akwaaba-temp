@@ -801,7 +801,7 @@
 
 		function refreshAddState() {
 			if (!addBtn) return;
-			const blocked = hasVariants && !activeCode;
+			const blocked = addBtn.hasAttribute("data-sold-out") || (hasVariants && !activeCode);
 			addBtn.disabled = blocked;
 			addBtn.classList.toggle("-disabled", blocked);
 		}

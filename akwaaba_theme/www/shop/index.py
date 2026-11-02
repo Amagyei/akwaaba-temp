@@ -10,6 +10,7 @@ import frappe
 from frappe.utils import cint
 
 from akwaaba_theme.context import CARD_IMAGE_SQL, with_shared_context
+from akwaaba_theme.stock import sold_out_codes
 
 
 PAGE_SIZE = 24
@@ -116,6 +117,10 @@ def _query_items(item_group, sort, start, page_size):
 	)
 
 	_attach_variant_options(rows)
+	sold_out = sold_out_codes([r.item_code for r in rows if not r.get("has_variants")])
+	for r in rows:
+		if r.item_code in sold_out:
+			r["sold_out"] = True
 
 	count_filters = "WHERE wi.published = 1 AND (wi.variant_of IS NULL OR wi.variant_of = '')"
 	count_values = {}
@@ -178,6 +183,7 @@ def _attach_variant_options(rows):
 	by_template = {}
 	for v in variants:
 		by_template.setdefault(v.variant_of, []).append(v)
+	sold_out = sold_out_codes([v.item_code for v in variants])
 
 	for r in rows:
 		if not r.get("has_variants"):
@@ -189,10 +195,11 @@ def _attach_variant_options(rows):
 				"code": v.item_code,
 				"size": v.size,
 				"price": float(v.price or 0),
-				"oos": bool(v.on_backorder),
+				"oos": bool(v.on_backorder) or v.item_code in sold_out,
 			}
 			for v in opts
 		]
+		r["sold_out"] = bool(opts) and all(o["oos"] for o in r["variant_options"])
 		# "from" price = min price across in-stock variants
 		in_stock_prices = [o["price"] for o in r["variant_options"] if not o["oos"] and o["price"]]
 		if in_stock_prices:

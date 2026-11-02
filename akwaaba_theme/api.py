@@ -20,6 +20,8 @@ import requests
 from frappe.rate_limiter import rate_limit
 from frappe.utils import flt
 
+from akwaaba_theme import stock
+
 
 DEFAULT_PRICE_LIST = "Akwaaba Retail"
 
@@ -163,6 +165,7 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 	if notes:
 		so.terms = notes
 
+	left = stock.available(items)
 	for code, qty in items.items():
 		wi = frappe.db.get_value(
 			"Website Item",
@@ -175,12 +178,17 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 		price = flt(_lookup_price(code))
 		if price <= 0:
 			frappe.throw(f"{wi.web_item_name or code} can't be ordered online right now. Please message us.")
+		if code in left and left[code] < qty:
+			name = wi.web_item_name or code
+			frappe.throw(f"{name} has sold out." if left[code] <= 0 else f"Only {int(left[code])} left of {name}.")
 		so.append("items", {
 			"item_code": code,
 			"item_name": wi.web_item_name or wi.item_name or code,
 			"qty": qty,
 			"rate": price,
 			"delivery_date": so.delivery_date,
+			# Reservations are counted per warehouse, so tracked pieces need one.
+			"warehouse": stock.stock_warehouse() if code in left else None,
 		})
 
 	so.flags.ignore_mandatory = True
@@ -486,6 +494,11 @@ def init_paystack_payment(order_name, key=None):
 		}
 	if order.docstatus == 2:
 		frappe.throw("This order was cancelled, so it can't be paid.", frappe.ValidationError)
+	if stock.short_lines(_order_lines(order.name)):
+		frappe.throw(
+			"A piece in this order has just sold out, so we haven't taken any money. Please message us.",
+			frappe.ValidationError,
+		)
 
 	amount = flt(order.grand_total or order.total or 0)
 	if amount <= 0:
@@ -813,6 +826,14 @@ def _reference_to_order(reference):
 	return None
 
 
+def _order_lines(order_name):
+	"""{item_code: quantity} for an order."""
+	lines = {}
+	for row in frappe.get_all("Sales Order Item", filters={"parent": order_name}, fields=["item_code", "qty"]):
+		lines[row.item_code] = lines.get(row.item_code, 0) + flt(row.qty)
+	return lines
+
+
 def _metadata_order(data):
 	"""The order we told Paystack this transaction is for, if it came back."""
 	meta = (data or {}).get("metadata")
@@ -841,7 +862,7 @@ def _flag_for_refund(order_name, reference, data, why):
 	"""Money arrived that can't be applied to the order. A person has to act."""
 	amount = flt((data or {}).get("amount") or 0) / 100
 	ccy = (data or {}).get("currency") or "GHS"
-	message = f"Order {order_name} {why}. Paystack reference {reference}, {ccy} {amount:,.2f}. Refund it in Paystack."
+	message = f"Order {order_name} {why}. Payment reference {reference}, {ccy} {amount:,.2f}. Refund it, or arrange another piece."
 	frappe.log_error(title=f"Paystack refund needed {order_name}", message=message)
 	notify_managers(f"Refund needed · {order_name}", message, order_name)
 	frappe.db.commit()
@@ -973,7 +994,11 @@ def _complete_accounting_cycle(order_name, reference, paystack_data):
 		so = frappe.get_doc("Sales Order", order_name)
 
 		# --- STEP 1: submit SO (idempotent) ---
+		oversold = []
 		if so.docstatus != 1:
+			# Money has arrived, so the order and the books still record it. If the
+			# last piece went to another paid order, a person decides what happens.
+			oversold = stock.short_lines(_order_lines(order_name), for_update=True)
 			note = (
 				f"\n\n---\nPaystack reference: {reference}\n"
 				f"Channel: {channel}\n"
@@ -989,6 +1014,11 @@ def _complete_accounting_cycle(order_name, reference, paystack_data):
 				so.db_set("payment_reference", reference, update_modified=False)
 			result["notes"].append("SO already submitted")
 		frappe.db.commit()
+
+		if oversold:
+			result["oversold"] = oversold
+			result["notes"].append(f"Sold out before this payment: {', '.join(oversold)}")
+			_flag_for_refund(order_name, reference, paystack_data, f"was paid after the last of {', '.join(oversold)} sold")
 
 		if not auto:
 			result["ok"] = True
