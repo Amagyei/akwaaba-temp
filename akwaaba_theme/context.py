@@ -30,9 +30,6 @@ def get_shop_collections(homepage_only=False, nav_only=False):
 
 	# Item Group may or may not have our custom fields (they get added on
 	# install). Guard so this still returns rows on a fresh site.
-	optional = {
-		"homepage_position": "Website Item-hover_video_url",  # dummy, replaced below
-	}
 	if frappe.db.exists("Custom Field", "Item Group-homepage_position"):
 		fields += [
 			"homepage_position",
