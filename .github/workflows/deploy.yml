@@ -1,0 +1,43 @@
+name: Deploy
+
+# Run by hand. The production environment holds the deploy key and requires
+# approval, so nothing reaches live without a person saying yes.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or commit to deploy
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - name: Check the ref
+        env:
+          REF: ${{ inputs.ref }}
+        run: '[[ "$REF" =~ ^[A-Za-z0-9._/-]+$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Deploy over SSH
+        env:
+          REF: ${{ inputs.ref }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # The server's identity is pinned here, so a stand-in server is refused.
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=deploy/known_hosts \
+            akwaaba@23.95.130.188 "bash -s -- '$REF'" < deploy/deploy.sh

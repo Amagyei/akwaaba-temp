@@ -1,6 +1,7 @@
 {
 	"_note": "Exact commits the live site runs. CI tests against these, and deploy.sh refuses to run if the server doesn't match. Changing one is a framework upgrade: try it on a copy of live first.",
 	"python": "3.14",
+	"akwaaba_theme_live": "5daa4d782bc19c4cd7e2139202454adee1d21c4e",
 	"apps": {
 		"frappe": {"repo": "https://github.com/frappe/frappe", "branch": "version-16", "commit": "5cba016e86b54b57f34a3864282b92300ef20fb0", "version": "16.32.0"},
 		"erpnext": {"repo": "https://github.com/frappe/erpnext", "branch": "version-16", "commit": "b24c9eba551905e256e336ff170a91a92d197a2f", "version": "16.33.0"},

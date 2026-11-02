@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Python compiles
+        run: python -m compileall -q akwaaba_theme deploy
+      - name: JSON parses
+        run: git ls-files '*.json' | xargs -I{} python -c 'import json,sys; json.load(open(sys.argv[1]))' {}
+      - name: JavaScript parses
+        run: git ls-files 'akwaaba_theme/public/js/*.js' | xargs -n1 node --check
+      - name: Shell scripts parse
+        run: for f in deploy/*.sh; do bash -n "$f"; done
+      - name: No secrets
+        run: bash deploy/secret_scan.sh
+      - name: Release report
+        run: python deploy/release_report.py | tee -a "$GITHUB_STEP_SUMMARY"
+
+  tests-and-deploy-rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build a bench on live's commits
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mariadb-client
+          npm install -g yarn
+          mkdir -p "$HOME/ci-logs"
+          bash app/deploy/ci_bench.sh "$GITHUB_WORKSPACE/app" 2>&1 | tee "$HOME/ci-logs/build.log"
+      - name: Tests
+        working-directory: /home/runner/frappe-bench
+        run: bench --site test_site run-tests --app akwaaba_theme 2>&1 | tee "$HOME/ci-logs/tests.log"
+      - name: Rehearse a deploy and a rollback
+        working-directory: /home/runner/frappe-bench
+        env:
+          AKW_BENCH: /home/runner/frappe-bench
+          AKW_SITE: test_site
+          AKW_CANARY: ""
+          AKW_URL: http://test_site:8000
+          AKW_REMOTE: origin
+        run: |
+          set -o pipefail
+          {
+            echo "127.0.0.1 test_site" | sudo tee -a /etc/hosts
+            bench build
+            (bench serve --port 8000 > "$HOME/ci-logs/serve.log" 2>&1 &)
+            # Services aren't under supervisor here, so restarting is a no-op.
+            mkdir -p "$HOME/stub"
+            printf '#!/bin/sh\nexit 0\n' > "$HOME/stub/sudo"
+            chmod +x "$HOME/stub/sudo"
+            export PATH="$HOME/stub:$PATH"
+            for i in 1 2 3 4 5 6 7 8 9 10; do curl -fs -o /dev/null "$AKW_URL/api/method/ping" && break; sleep 5; done
+            git -C apps/akwaaba_theme remote -v | sed 's#//[^/]*@#//#'
+            bash apps/akwaaba_theme/deploy/deploy.sh "$GITHUB_SHA"
+            bash apps/akwaaba_theme/deploy/rollback.sh "$(git -C apps/akwaaba_theme rev-parse HEAD~1)"
+            git -C apps/akwaaba_theme checkout --quiet --detach "$GITHUB_SHA"
+          } 2>&1 | tee "$HOME/ci-logs/rehearsal.log"
+      - name: Say what failed
+        if: failure()
+        run: |
+          # Annotations can be read without signing in to GitHub.
+          for f in "$HOME"/ci-logs/*.log; do
+            [ -f "$f" ] || continue
+            tail -n 40 "$f" | cut -c1-200 | grep -v '^$' | tail -n 25 | while IFS= read -r line; do
+              echo "::error title=$(basename "$f")::${line//%/%25}"
+            done
+          done
