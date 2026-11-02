@@ -21,6 +21,7 @@ def after_install():
 	_ensure_reverse_order_client_script()
 	_ensure_momo_confirm_client_script()
 	seed_category_redirects()
+	ensure_studio_defaults()
 	frappe.db.commit()
 	print("Done.")
 
@@ -896,3 +897,97 @@ def seed_category_redirects():
 		ws.save(ignore_permissions=True)
 		frappe.db.commit()
 	print(f"Akwaaba: category redirects seeded (+{added}).")
+
+
+# ---------------------------------------------------------------------------
+# Studio (phone item upload) — default prompts + house style
+# ---------------------------------------------------------------------------
+
+STUDIO_HOUSE_STYLE = """\
+The photo shows a garment on a mannequin or a clothes hanger. Reproduce this exact garment: keep the fabric print, colours, pattern scale and placement, cut, length, neckline, sleeves, waistband, trims and every visible detail identical. Do not redesign, recolour, simplify or add anything to it.
+Remove the mannequin, hanger, clothing tags and the original background.
+Photorealistic high-end editorial fashion photography for Serwa Kollections, a Ghanaian luxury womenswear label. Soft, even studio lighting and a warm cream backdrop (#F7F1E7) unless the shot says otherwise. Natural skin texture and true-to-life fabric drape.
+No text, logos, watermarks, captions or borders."""
+
+STUDIO_PROMPTS = [
+	{
+		"title": "Lookbook — 4 poses",
+		"sort_order": 10,
+		"hint": "One model, four full-body poses. Four gallery photos from one call.",
+		"rows": 2, "cols": 2, "aspect_ratio": "3:4", "default_main_panel": 1,
+		"prompt": (
+			"Show one Ghanaian woman model wearing the garment, as four photos: "
+			"top-left, full-body front view standing tall; top-right, full-body three-quarter view mid-stride; "
+			"bottom-left, full-body back view; bottom-right, waist-up shot with one hand at the waist showing the fabric. "
+			"Same model, hair, makeup, simple gold jewellery and backdrop in all four. "
+			"In the full-body shots keep the whole figure in frame, head to shoes."
+		),
+	},
+	{
+		"title": "Front & back",
+		"sort_order": 20,
+		"hint": "Full-body front and back, side by side. Two gallery photos.",
+		"rows": 1, "cols": 2, "aspect_ratio": "3:2", "default_main_panel": 1,
+		"prompt": (
+			"Show one Ghanaian woman model wearing the garment, as two photos side by side: "
+			"left, full-body front view; right, full-body back view in the same pose. "
+			"Same model and backdrop in both, whole figure in frame, head to shoes."
+		),
+	},
+	{
+		"title": "Clean product shot",
+		"sort_order": 30,
+		"hint": "Garment alone on an invisible mannequin. Cheapest option.",
+		"rows": 1, "cols": 1, "aspect_ratio": "3:4", "default_main_panel": 1,
+		"model": "gemini-3.1-flash-lite-image", "image_size": "1K",
+		"prompt": (
+			"A single ghost-mannequin (invisible mannequin) e-commerce photo of the garment on its own, "
+			"front view, centred and filling about 80% of the frame, with a soft natural shadow beneath it."
+		),
+	},
+	{
+		"title": "Fabric details",
+		"sort_order": 40,
+		"hint": "Four close-ups: print, waist or neckline, hem, finishing.",
+		"rows": 2, "cols": 2, "aspect_ratio": "1:1", "default_main_panel": 1,
+		"prompt": (
+			"Four macro close-up photos of the garment itself: top-left, the fabric print and texture filling the frame; "
+			"top-right, the waistband or neckline; bottom-left, the hem; bottom-right, a seam, trim or finishing detail. "
+			"Shallow depth of field, crisp focus on the fabric."
+		),
+	},
+	{
+		"title": "Editorial — Accra",
+		"sort_order": 50,
+		"hint": "One lifestyle shot outdoors in warm light. Good for the hero slider.",
+		"rows": 1, "cols": 1, "aspect_ratio": "3:4", "default_main_panel": 1,
+		"prompt": (
+			"One editorial lifestyle photo of a Ghanaian woman model wearing the garment, full body, "
+			"in a sunlit Accra courtyard with terracotta walls and green plants, warm golden-hour light. "
+			"This shot uses that outdoor setting instead of the cream studio backdrop."
+		),
+	},
+]
+
+
+def ensure_studio_defaults():
+	"""Seed the Studio's starter prompts and house style.
+
+	Runs after every migrate but only fills a blank slate: prompts are seeded
+	only while there are none (so deleted ones stay deleted) and the house
+	style only while it's empty. Re-run by hand:
+	    bench --site <site> execute akwaaba_theme.install.ensure_studio_defaults
+	"""
+	added = 0
+	if not frappe.db.count("Akwaaba Studio Prompt"):
+		for spec in STUDIO_PROMPTS:
+			frappe.get_doc(dict(spec, doctype="Akwaaba Studio Prompt", enabled=1)).insert(ignore_permissions=True)
+			added += 1
+
+	settings = frappe.get_single("Akwaaba Studio Settings")
+	if not (settings.house_style or "").strip():
+		settings.house_style = STUDIO_HOUSE_STYLE
+		settings.flags.ignore_mandatory = True
+		settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	print(f"Akwaaba: Studio prompts seeded (+{added}).")

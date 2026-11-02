@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:title",
+ "creation": "2026-10-24 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "enabled",
+  "sort_order",
+  "column_break_title",
+  "hint",
+  "prompt_section",
+  "prompt",
+  "output_section",
+  "rows",
+  "cols",
+  "default_main_panel",
+  "column_break_output",
+  "aspect_ratio",
+  "model",
+  "image_size"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "default": "0",
+   "fieldname": "sort_order",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Sort Order"
+  },
+  {
+   "fieldname": "column_break_title",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "One line shown under the title on the phone.",
+   "fieldname": "hint",
+   "fieldtype": "Small Text",
+   "label": "Hint"
+  },
+  {
+   "fieldname": "prompt_section",
+   "fieldtype": "Section Break",
+   "label": "Prompt"
+  },
+  {
+   "description": "Sent with the photo. The House Style from Akwaaba Studio Settings is appended automatically.",
+   "fieldname": "prompt",
+   "fieldtype": "Long Text",
+   "label": "Prompt",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_section",
+   "fieldtype": "Section Break",
+   "label": "Output"
+  },
+  {
+   "default": "1",
+   "description": "Panels stacked top to bottom. 2 rows × 2 columns = a 2×2 grid, sliced into 4 photos.",
+   "fieldname": "rows",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Rows"
+  },
+  {
+   "default": "1",
+   "fieldname": "cols",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Columns"
+  },
+  {
+   "default": "1",
+   "description": "Reading order: 1 = top-left. Pre-selected as the item's main photo.",
+   "fieldname": "default_main_panel",
+   "fieldtype": "Int",
+   "label": "Suggested Main Panel"
+  },
+  {
+   "fieldname": "column_break_output",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "3:4",
+   "description": "Of the whole generated image. A 2×2 grid at 3:4 gives 3:4 panels; a 1×2 row at 3:2 gives 3:4 panels.",
+   "fieldname": "aspect_ratio",
+   "fieldtype": "Select",
+   "label": "Aspect Ratio (whole image)",
+   "options": "1:1\n2:3\n3:2\n3:4\n4:3\n4:5\n5:4\n9:16\n16:9\n21:9\n1:4\n4:1"
+  },
+  {
+   "description": "Blank = Default Model from settings.",
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model"
+  },
+  {
+   "description": "Blank = Default Image Size.",
+   "fieldname": "image_size",
+   "fieldtype": "Select",
+   "label": "Image Size",
+   "options": "\n1K\n2K\n4K"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-24 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Akwaaba Theme",
+ "name": "Akwaaba Studio Prompt",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Item Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Website Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "sort_order",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

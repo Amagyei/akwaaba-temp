@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "creation": "2026-10-24 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "provider_section",
+  "enabled",
+  "gemini_api_key",
+  "column_break_provider",
+  "default_model",
+  "default_image_size",
+  "request_timeout",
+  "style_section",
+  "house_style",
+  "catalog_section",
+  "default_item_group",
+  "price_list",
+  "column_break_catalog",
+  "publish_by_default",
+  "max_photo_px"
+ ],
+ "fields": [
+  {
+   "fieldname": "provider_section",
+   "fieldtype": "Section Break",
+   "label": "AI Provider"
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable Studio"
+  },
+  {
+   "description": "Google AI Studio → Get API key. The project needs billing enabled: Gemini image models have no free tier.",
+   "fieldname": "gemini_api_key",
+   "fieldtype": "Password",
+   "label": "Gemini API Key"
+  },
+  {
+   "fieldname": "column_break_provider",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "gemini-nano-banana-2.1",
+   "description": "Used when a prompt doesn't name its own model. Options: gemini-nano-banana-2.1 (1K/2K/4K), gemini-3.1-flash-lite-image (1K only, cheapest), gemini-3.1-flash-image, gemini-3-pro-image.",
+   "fieldname": "default_model",
+   "fieldtype": "Data",
+   "label": "Default Model"
+  },
+  {
+   "default": "2K",
+   "description": "Grid prompts are sliced into panels, so 2K keeps each panel around 1000px.",
+   "fieldname": "default_image_size",
+   "fieldtype": "Select",
+   "label": "Default Image Size",
+   "options": "1K\n2K\n4K"
+  },
+  {
+   "default": "110",
+   "fieldname": "request_timeout",
+   "fieldtype": "Int",
+   "label": "Request Timeout (seconds)"
+  },
+  {
+   "fieldname": "style_section",
+   "fieldtype": "Section Break",
+   "label": "House Style"
+  },
+  {
+   "description": "Appended to every prompt. Put the rules that apply to every shot here (garment fidelity, backdrop, no text).",
+   "fieldname": "house_style",
+   "fieldtype": "Long Text",
+   "label": "House Style"
+  },
+  {
+   "fieldname": "catalog_section",
+   "fieldtype": "Section Break",
+   "label": "Catalog Defaults"
+  },
+  {
+   "fieldname": "default_item_group",
+   "fieldtype": "Link",
+   "label": "Default Category",
+   "options": "Item Group"
+  },
+  {
+   "default": "Akwaaba Retail",
+   "fieldname": "price_list",
+   "fieldtype": "Link",
+   "label": "Price List",
+   "options": "Price List"
+  },
+  {
+   "fieldname": "column_break_catalog",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "publish_by_default",
+   "fieldtype": "Check",
+   "label": "Publish New Items by Default"
+  },
+  {
+   "default": "2048",
+   "description": "Longest side for uploaded phone photos. The phone also downsizes before upload to save data.",
+   "fieldname": "max_photo_px",
+   "fieldtype": "Int",
+   "label": "Max Photo Size (px)"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-24 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Akwaaba Theme",
+ "name": "Akwaaba Studio Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Item Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Website Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -64,6 +64,8 @@ website_context = {
 
 # Seed catalog + configure webshop on first install of this app
 after_install = "akwaaba_theme.install.after_install"
+# Seeds Studio prompts/house style on a fresh deploy; no-op once they exist.
+after_migrate = ["akwaaba_theme.install.ensure_studio_defaults"]
 
 # Export custom fields so they migrate to prod on `bench migrate`
 # even without re-running install.py.

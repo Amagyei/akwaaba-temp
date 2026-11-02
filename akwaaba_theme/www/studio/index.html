@@ -1,0 +1,52 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block head_include %}
+	<meta name="theme-color" content="#0F0F0F">
+	<meta name="robots" content="noindex,nofollow">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-title" content="Studio">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<link rel="stylesheet" href="/assets/akwaaba_theme/css/studio.css">
+{% endblock %}
+
+{# A tool, not a storefront page: no shop nav or footer. #}
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block page_content %}
+<div class="stu" id="stu">
+	<header class="stu-top">
+		<div>
+			<div class="stu-eyebrow">Serwa Kollections</div>
+			<h1 class="stu-title">Studio</h1>
+		</div>
+		<nav class="stu-top__links">
+			<a href="/app/akwaaba-studio-prompt">Prompts</a>
+			<a href="/app/akwaaba-studio-session">History</a>
+		</nav>
+	</header>
+	<div class="kente-strip -thin"></div>
+
+	<main id="stu-app" class="stu-app" aria-live="polite">
+		<p class="stu-muted">Loading…</p>
+	</main>
+</div>
+
+<div class="stu-bar" id="stu-bar" hidden></div>
+<div class="stu-toast" id="stu-toast" role="status" hidden></div>
+
+<dialog class="stu-viewer" id="stu-viewer">
+	<img alt="">
+	<form method="dialog"><button class="stu-viewer__close" aria-label="Close">×</button></form>
+</dialog>
+
+<input type="file" id="stu-cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="stu-lib" accept="image/*" hidden>
+<input type="file" id="stu-extra" accept="image/*" multiple hidden>
+
+<script id="stu-boot" type="application/json">{{ boot_json | safe }}</script>
+<script src="/assets/akwaaba_theme/js/studio.js" defer></script>
+{% endblock %}
