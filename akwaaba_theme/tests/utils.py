@@ -10,6 +10,30 @@ PRICE = 350
 PRICE_LIST = "Akwaaba Retail"
 
 
+def before_tests():
+	"""A new site has no company or ERPNext fixtures until the setup wizard has run."""
+	if frappe.db.a_row_exists("Company"):
+		return
+	from frappe.desk.page.setup_wizard.setup_wizard import setup_complete
+
+	year = frappe.utils.now_datetime().year
+	setup_complete({
+		"language": "English",
+		"country": "Ghana",
+		"timezone": "Africa/Accra",
+		"currency": "GHS",
+		"full_name": "Test User",
+		"email": "test.user@example.com",
+		"company_name": "Akwaaba Test",
+		"company_abbr": "AKT",
+		"chart_of_accounts": "Standard",
+		"fy_start_date": f"{year}-01-01",
+		"fy_end_date": f"{year}-12-31",
+		"domains": ["Retail"],
+	})
+	frappe.db.commit()
+
+
 def ensure_company():
 	"""A GHS company set as the default, which is what place_order relies on."""
 	name = frappe.db.get_default("company")

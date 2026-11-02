@@ -73,6 +73,8 @@ after_migrate = [
 	"akwaaba_theme.install.ensure_studio_defaults",
 ]
 
+before_tests = "akwaaba_theme.tests.utils.before_tests"
+
 scheduler_events = {
 	"daily": ["akwaaba_theme.api.retry_unsettled_orders"],
 	"weekly": ["akwaaba_theme.studio.api.cleanup_completed_sessions"],
