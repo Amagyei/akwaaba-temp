@@ -75,4 +75,5 @@ after_migrate = [
 
 scheduler_events = {
 	"daily": ["akwaaba_theme.api.retry_unsettled_orders"],
+	"weekly": ["akwaaba_theme.studio.api.cleanup_completed_sessions"],
 }

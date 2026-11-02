@@ -40,7 +40,7 @@ def get_context(context):
 	context.gallery = _gallery(item)
 	context.attachments = _attachments(item, exclude=context.gallery)
 	context.specs = _specs(item.get("name"))
-	context.description = item.get("web_long_description") or item.get("description") or ""
+	context.description = _description(item)
 	context.currency = "GHS"
 	context.price = item.get("price")
 	context.price_from = bool(item.get("price_from"))
@@ -178,6 +178,14 @@ def _gallery(item):
 			if r.image and r.image not in imgs:
 				imgs.append(r.image)
 	return imgs
+
+
+def _description(item):
+	"""The long text, unless it only repeats what the page already shows."""
+	text = item.get("web_long_description") or item.get("description") or ""
+	plain = frappe.utils.strip_html(text).strip()
+	shown = {(item.get("short_description") or "").strip(), (item.get("item_name") or "").strip()}
+	return "" if plain in shown else text
 
 
 def _attachments(item, exclude=()):

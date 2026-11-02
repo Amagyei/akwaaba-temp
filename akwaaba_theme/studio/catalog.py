@@ -9,13 +9,17 @@ Files stay private on the session while under review; only the chosen ones
 are copied out as public files when they're committed to an item.
 """
 
+import io
 import re
 import unicodedata
 
 import frappe
 from frappe.utils import flt
+from PIL import Image
 
 DEFAULT_PRICE_LIST = "Akwaaba Retail"
+WEB_MAX_PX = 1600
+WEB_QUALITY = 82
 
 # Twi/Ewe letters NFKD can't fold to ASCII (ɛ, ɔ, ŋ …) — keep them readable in URLs.
 _FOLD = str.maketrans({"ɛ": "e", "Ɛ": "E", "ɔ": "o", "Ɔ": "O", "ŋ": "n", "Ŋ": "N", "ƒ": "f", "ʋ": "v", "ɖ": "d"})
@@ -204,9 +208,18 @@ def _publish_file(file_name, doctype, docname, public_name):
 		"attached_to_doctype": doctype,
 		"attached_to_name": docname,
 		"is_private": 0,
-		"content": src.get_content(),
+		"content": _web_copy(src.get_content()),
 		"decode": False,
 	}).insert(ignore_permissions=True).file_url
+
+
+def _web_copy(content):
+	"""The size a shopper needs. The session keeps the full-quality original."""
+	img = Image.open(io.BytesIO(content))
+	img.thumbnail((WEB_MAX_PX, WEB_MAX_PX), Image.Resampling.LANCZOS)
+	buf = io.BytesIO()
+	img.convert("RGB").save(buf, "JPEG", quality=WEB_QUALITY, optimize=True, progressive=True)
+	return buf.getvalue()
 
 
 def _set_price(item_code, price):

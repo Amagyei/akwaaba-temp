@@ -9,7 +9,7 @@ Query params:
 import frappe
 from frappe.utils import cint
 
-from akwaaba_theme.context import with_shared_context
+from akwaaba_theme.context import CARD_IMAGE_SQL, with_shared_context
 
 
 PAGE_SIZE = 24
@@ -93,7 +93,7 @@ def _query_items(item_group, sort, start, page_size):
 			wi.web_item_name,
 			wi.item_group,
 			wi.route,
-			COALESCE(NULLIF(wi.website_image, ''), i.image) AS website_image,
+			{CARD_IMAGE_SQL} AS website_image,
 			wi.short_description,
 			wi.has_variants,
 			wi.on_backorder,

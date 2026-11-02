@@ -67,14 +67,23 @@ def get_shop_collections(homepage_only=False, nav_only=False):
 	return rows
 
 
+# The light copy a card should show, or the full photo where none exists yet.
+# Filtered by name because webshop's older thumbnails are too small for a card.
+CARD_IMAGE_SQL = """COALESCE(
+	CASE WHEN wi.thumbnail LIKE '%%-card%%' THEN wi.thumbnail END,
+	NULLIF(wi.website_image, ''),
+	i.image
+)"""
+
+
 def _collection_images(item_group, limit=5):
 	"""A handful of real product photos for this Item Group's homepage card,
 	newest first. Powers a background slideshow instead of a static swatch."""
 	if not item_group:
 		return []
 	rows = frappe.db.sql(
-		"""
-		SELECT COALESCE(NULLIF(wi.website_image, ''), i.image) AS image
+		f"""
+		SELECT {CARD_IMAGE_SQL} AS image
 		FROM `tabWebsite Item` wi
 		LEFT JOIN `tabItem` i ON i.item_code = wi.item_code
 		WHERE wi.published = 1 AND wi.item_group = %(item_group)s

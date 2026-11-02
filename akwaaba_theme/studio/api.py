@@ -174,7 +174,9 @@ def generate(session, prompts):
 	names = [names] if isinstance(names, str) else list(names or [])
 	if not names:
 		frappe.throw("Pick at least one style.")
-	if sess.status == "Generating" and not _is_stale(sess):
+	# Lock the row: a double-tap must not pass this check twice and pay twice.
+	current = frappe.db.get_value(SESSION, sess.name, ["status", "generating_since"], as_dict=True, for_update=True)
+	if current.status == "Generating" and not _is_stale(current):
 		frappe.throw("Still working on the last request — hang on a moment.")
 
 	s = _settings()
@@ -303,15 +305,19 @@ def finalize(session, data):
 	ordered = sorted(sess.images, key=lambda r: (cint(r.run), cint(r.panel)))
 	gallery = [r for r in ordered if r.kind in GALLERY_KINDS and cint(r.include)]
 	supporting = [r for r in sess.images if r.kind in SUPPORTING_KINDS and cint(r.include)]
-	main = next((r for r in gallery if cint(r.is_main)), gallery[0] if gallery else None)
 	if not gallery and not supporting:
 		frappe.throw("Choose at least one photo.")
+	if not gallery:
+		# Only supporting photos were kept. The first one leads, so a product
+		# can't publish with no main image.
+		gallery, supporting = supporting[:1], supporting[1:]
+	main = next((r for r in gallery if cint(r.is_main)), gallery[0])
 
 	files = {r.name: _file_name(sess, r.image) for r in gallery + supporting}
 	kw = dict(
 		gallery=[files[r.name] for r in gallery],
 		supporting=[files[r.name] for r in supporting],
-		main=files[main.name] if main else None,
+		main=files[main.name],
 	)
 
 	if data.get("mode") == "existing":
@@ -362,6 +368,20 @@ def discard(session):
 	sess = _get_session(session, editable=True)
 	frappe.delete_doc(SESSION, sess.name, ignore_permissions=True)  # takes its files with it
 	return "ok"
+
+
+def cleanup_completed_sessions(days=30):
+	"""Delete saved sessions and their private photos once they're this old.
+
+	Weekly job. Published photos are separate public copies, so they stay.
+	By hand: bench --site <site> execute akwaaba_theme.studio.api.cleanup_completed_sessions
+	"""
+	cutoff = frappe.utils.add_days(frappe.utils.now_datetime(), -cint(days))
+	names = frappe.get_all(SESSION, filters={"status": "Completed", "modified": ["<", cutoff]}, pluck="name")
+	for name in names:
+		frappe.delete_doc(SESSION, name, ignore_permissions=True)
+	frappe.db.commit()
+	return len(names)
 
 
 # ---------------------------------------------------------------------------

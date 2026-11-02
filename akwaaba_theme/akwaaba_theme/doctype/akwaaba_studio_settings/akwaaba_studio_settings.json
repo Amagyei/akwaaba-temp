@@ -27,7 +27,7 @@
    "label": "AI Provider"
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enable Studio"
