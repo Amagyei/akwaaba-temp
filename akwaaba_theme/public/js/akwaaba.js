@@ -458,7 +458,7 @@
 					const order = res.body.message;
 					// Clear cart cookie
 					writeCart({});
-					window.location.href = "/order/" + encodeURIComponent(order.name);
+					window.location.href = order.url;
 				})
 				.catch(function (err) {
 					if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove("is-loading"); }
@@ -720,6 +720,7 @@
 
 			const orderName = btn.getAttribute("data-akw-pay-order");
 			if (!orderName) return;
+			const orderKey = btn.getAttribute("data-akw-pay-key") || "";
 
 			const errEl = document.querySelector(".akw-order__pay-error");
 			if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
@@ -734,7 +735,7 @@
 					"X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || "",
 				},
 				credentials: "same-origin",
-				body: new URLSearchParams({ order_name: orderName }).toString(),
+				body: new URLSearchParams({ order_name: orderName, key: orderKey }).toString(),
 			})
 				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
 				.then(function (res) {
@@ -765,6 +766,13 @@
 
 	function _readableError(raw) {
 		if (!raw) return "Something went wrong. Please try again.";
+		// What fetch() and JSON parsing say when the network or server hiccups.
+		if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+			return "We couldn't reach the shop. Check your connection and try again.";
+		}
+		if (/unexpected (token|end)|not valid json|json\.parse/i.test(raw)) {
+			return "Something went wrong on our side. Please try again.";
+		}
 		try {
 			const parsed = JSON.parse(raw);
 			if (Array.isArray(parsed) && parsed.length) {

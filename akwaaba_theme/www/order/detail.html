@@ -19,11 +19,15 @@
 			<div class="akw-order__notice -success">
 				<strong>Payment received.</strong> Medaase — your order is confirmed.
 			</div>
-		{% elif payment_check and payment_check.status in ("failed", "abandoned") %}
+		{% elif payment_check and payment_check.status == "cancelled" %}
+			<div class="akw-order__notice -warn">
+				This order was cancelled, so your payment wasn't applied. We'll refund it. Message us if you have questions.
+			</div>
+		{% elif payment_check and payment_check.status in ("failed", "abandoned") and not order.is_paid %}
 			<div class="akw-order__notice -warn">
 				Payment didn't go through. You can try again with the button below.
 			</div>
-		{% elif payment_check and payment_check.status == "pending" %}
+		{% elif payment_check and payment_check.status == "pending" and not order.is_paid %}
 			<div class="akw-order__notice -info">
 				Payment is pending — we'll confirm as soon as it lands.
 			</div>
@@ -36,11 +40,13 @@
 			</svg>
 		</div>
 		<div class="akw-order__eyebrow">
-			{% if order.is_paid %}Confirmed{% else %}Medaase!{% endif %}
+			{% if order.is_paid %}Confirmed{% elif order.is_cancelled %}Cancelled{% else %}Medaase!{% endif %}
 		</div>
 		<h1 class="akw-order__title">
 			{% if order.is_paid %}
 				Payment received, order confirmed.
+			{% elif order.is_cancelled %}
+				This order was cancelled.
 			{% else %}
 				Your order is with us.
 			{% endif %}
@@ -49,6 +55,8 @@
 			{% if order.is_paid %}
 				We're preparing your pieces. You'll hear from us on WhatsApp
 				with delivery details soon.
+			{% elif order.is_cancelled %}
+				If you've already paid or think this is a mistake, message us and we'll sort it out.
 			{% else %}
 				Pay now to lock in your order — or leave it and we'll follow up
 				on WhatsApp to arrange payment and delivery.
@@ -74,11 +82,12 @@
 		</div>
 
 		{# Pay Now — only when unpaid AND Paystack is configured #}
-		{% if paystack_enabled and not order.is_paid %}
+		{% if paystack_enabled and order.is_draft %}
 		<div class="akw-order__pay">
 			<button type="button"
 				class="akw-order__pay-btn"
-				data-akw-pay-order="{{ order.name }}">
+				data-akw-pay-order="{{ order.name }}"
+				data-akw-pay-key="{{ order.order_key or '' }}">
 				<span class="akw-order__pay-label">Pay {{ order.currency or currency }} {{ '{:,.0f}'.format(order.grand_total or order.total or 0) }} with {{ paystack_brand }}</span>
 				<span class="akw-order__pay-loading" aria-hidden="true">Redirecting…</span>
 			</button>
@@ -90,8 +99,8 @@
 		{% endif %}
 
 		{# Direct MoMo (manual) — send-to-number instructions + "I've paid" #}
-		{% if direct_momo and not order.is_paid %}
-		<div class="akw-order__momo" data-akw-momo-order="{{ order.name }}">
+		{% if direct_momo and order.is_draft %}
+		<div class="akw-order__momo" data-akw-momo-order="{{ order.name }}" data-akw-momo-key="{{ order.order_key or '' }}">
 			{% if order.payment_status == "Awaiting Confirmation" %}
 				<div class="akw-order__notice -info" data-akw-momo-pending>
 					<strong>We're confirming your payment.</strong>
@@ -158,6 +167,7 @@
 					},
 					body: JSON.stringify({
 						order_name: order,
+						key: root.getAttribute("data-akw-momo-key"),
 						payer_phone: phoneEl ? phoneEl.value : "",
 						txn_id: txnEl ? txnEl.value : ""
 					})
@@ -207,6 +217,16 @@
 		</div>
 		{% endif %}
 
+	{% elif needs_link %}
+		<div class="akw-order__eyebrow">Order</div>
+		<h1 class="akw-order__title">Please use your order link.</h1>
+		<p class="akw-order__sub">To keep orders private, details only open from the link in your confirmation email. Can't find it? Message us with your order number.</p>
+		<div class="akw-order__actions">
+			{% if akw_contact and akw_contact.whatsapp %}
+			<a href="https://wa.me/{{ akw_contact.whatsapp }}" class="akw-order__cta -whatsapp" target="_blank" rel="noopener">Message us on WhatsApp</a>
+			{% endif %}
+			<a href="/shop" class="akw-order__cta -outline">Shop</a>
+		</div>
 	{% else %}
 		<div class="akw-order__eyebrow">Order</div>
 		<h1 class="akw-order__title">We couldn't find that order.</h1>

@@ -34,6 +34,7 @@
   "column_break_direct_momo",
   "admin_notify_phone",
   "sms_inbox_secret",
+  "sms_allowed_senders",
   "momo_instructions"
  ],
  "fields": [
@@ -208,6 +209,12 @@
    "fieldtype": "Password",
    "label": "SMS Inbox Secret",
    "description": "Optional. Shared secret for the momo_sms_inbox endpoint so an Android SMS-forwarder can auto-confirm receipts. Leave blank to keep it manual-only."
+  },
+  {
+   "fieldname": "sms_allowed_senders",
+   "fieldtype": "Data",
+   "label": "SMS Allowed Senders",
+   "description": "Comma-separated sender names that may confirm payments, e.g. MobileMoney. Leave empty to turn SMS confirmation off."
   },
   {
    "fieldname": "momo_instructions",

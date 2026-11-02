@@ -23,9 +23,11 @@ direct MoMo for those who'd rather send to the number). Confirmation reuses
 the same Sales Invoice + Payment Entry an automatic Paystack payment would.
 """
 
-import json
+import hmac
+import re
 
 import frappe
+from frappe.rate_limiter import rate_limit
 from frappe.utils import flt
 
 PAYMENT_STATUS_FIELD = "payment_status"
@@ -38,8 +40,9 @@ STATUS_PAID = "Paid"
 # Customer side — claim a payment (guest allowed)
 # ---------------------------------------------------------------------------
 
-@frappe.whitelist(allow_guest=True)
-def submit_momo_claim(order_name, payer_phone=None, txn_id=None):
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=10, seconds=60 * 60)
+def submit_momo_claim(order_name, key=None, payer_phone=None, txn_id=None):
 	"""Customer tells us they've sent the MoMo.
 
 	Moves the order to *Awaiting Confirmation*, records what they claim
@@ -47,11 +50,16 @@ def submit_momo_claim(order_name, payer_phone=None, txn_id=None):
 	and pings the admin. Does NOT mark anything paid — money is confirmed
 	only by `confirm_momo_payment` (admin) or a matched `momo_sms_inbox`.
 
-	Idempotent: re-submitting just refreshes the claimed details.
+	Idempotent: re-submitting just refreshes the claimed details. Needs the
+	order's key, so a visitor can't flip orders they've only guessed the name of.
 	"""
+	from akwaaba_theme.api import order_access_ok
+
 	order_name = (order_name or "").strip()
 	if not order_name:
 		frappe.throw("No order specified.")
+	if not order_access_ok(order_name, key):
+		frappe.throw("Order not found.")
 
 	payer_phone = _clean(payer_phone)
 	txn_id = _clean(txn_id)
@@ -70,6 +78,8 @@ def submit_momo_claim(order_name, payer_phone=None, txn_id=None):
 		if row.docstatus == 1:
 			# Already paid/submitted — nothing to claim.
 			return {"status": "already_paid", "order": order_name}
+		if row.docstatus == 2:
+			frappe.throw("This order was cancelled, so it can't be paid.")
 
 		frappe.db.set_value("Sales Order", order_name, {
 			PAYMENT_STATUS_FIELD: STATUS_AWAITING,
@@ -88,13 +98,14 @@ def submit_momo_claim(order_name, payer_phone=None, txn_id=None):
 # Admin side — confirm / reject a claimed payment
 # ---------------------------------------------------------------------------
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def confirm_momo_payment(order_name, txn_id=None, amount=None):
 	"""Admin confirms the MoMo receipt landed → run the full accounting cycle.
 
 	NOT guest-callable. Requires write permission on Sales Order (enforced by
 	the ORM below). Reuses `api._complete_accounting_cycle`, so this produces
-	the same SI + PE an automatic payment would. Sets `payment_status = Paid`.
+	the same SI + PE an automatic payment would. Sets `payment_status = Paid`
+	only once that cycle finishes; until then the order stays Awaiting.
 
 	`amount` lets the admin record what actually landed if it differs from the
 	order total (partials still submit the SO but the mismatch is noted).
@@ -114,6 +125,8 @@ def confirm_momo_payment(order_name, txn_id=None, amount=None):
 	)
 	if not row:
 		frappe.throw("Order not found.")
+	if row.docstatus == 2:
+		frappe.throw("This order was cancelled, so it can't be confirmed as paid.")
 
 	txn_id = _clean(txn_id) or row.get("momo_txn_id") or f"MOMO-{order_name}"
 	received = flt(amount) if amount not in (None, "") else flt(row.grand_total or row.total)
@@ -129,15 +142,17 @@ def confirm_momo_payment(order_name, txn_id=None, amount=None):
 	}
 	result = _complete_accounting_cycle(order_name, txn_id, synthetic)
 
-	frappe.db.set_value("Sales Order", order_name, PAYMENT_STATUS_FIELD, STATUS_PAID,
-	                    update_modified=False)
+	if result.get("ok"):
+		frappe.db.set_value("Sales Order", order_name, PAYMENT_STATUS_FIELD, STATUS_PAID,
+		                    update_modified=False)
 	_comment(order_name,
-	         f"MoMo payment confirmed by {frappe.session.user}. "
+	         f"MoMo payment {'confirmed' if result.get('ok') else 'received, accounting not finished,'} "
+	         f"by {frappe.session.user}. "
 	         f"Ref {txn_id}, {row.currency or 'GHS'} {received:,.2f}. "
 	         f"Accounting: {', '.join(result.get('notes', [])) or 'n/a'}.")
 	frappe.db.commit()
 
-	return dict(result, status="confirmed", order=order_name)
+	return dict(result, status="confirmed" if result.get("ok") else "accounting_incomplete", order=order_name)
 
 
 @frappe.whitelist()
@@ -165,7 +180,7 @@ def reject_momo_payment(order_name, reason=None):
 # Automation hook — SMS forwarding inbox (optional, closes the manual gap)
 # ---------------------------------------------------------------------------
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def momo_sms_inbox(secret=None, message=None, sender=None):
 	"""Receive a forwarded MoMo SMS and auto-confirm a matching order.
 
@@ -176,15 +191,14 @@ def momo_sms_inbox(secret=None, message=None, sender=None):
 	    { "secret": "<shared secret>", "message": "<full sms text>",
 	      "sender": "<sms sender, e.g. MTNMobileMoney>" }
 
-	Matching strategy (deterministic first, then best-effort):
-	  1. If the SMS text contains an order name (AKW/SAL-… or the bare SO
-	     name), confirm that order.
-	  2. Else, if exactly one order is Awaiting Confirmation with a grand
-	     total equal to the amount parsed from the SMS, confirm it.
-	  3. Else, log for manual review and leave everything Pending.
+	Confirms only when the SMS names the order and shows at least its full
+	total. Anything else is logged for manual review and left Pending. Amounts
+	alone never match: with a small price list, two orders share a total all
+	the time.
 
 	Security: gated by a shared `secret` matched against Payment Settings
-	(`sms_inbox_secret`). No secret configured ⇒ endpoint refuses.
+	(`sms_inbox_secret`) and by `sms_allowed_senders`, because any phone can
+	text the forwarding phone. Either one unset ⇒ endpoint refuses.
 	"""
 	from akwaaba_theme.api import _get_payment_settings
 
@@ -192,9 +206,16 @@ def momo_sms_inbox(secret=None, message=None, sender=None):
 	expected = (settings.get("sms_inbox_secret") or "").strip()
 	if not expected:
 		return {"status": "disabled", "reason": "no sms_inbox_secret configured"}
-	if (secret or "").strip() != expected:
+	if not hmac.compare_digest((secret or "").strip(), expected):
 		frappe.local.response.http_status_code = 401
 		return {"status": "unauthorized"}
+
+	allowed = {s.strip().lower() for s in (settings.get("sms_allowed_senders") or "").split(",") if s.strip()}
+	if not allowed:
+		return {"status": "disabled", "reason": "no sms_allowed_senders configured"}
+	if (sender or "").strip().lower() not in allowed:
+		frappe.log_error(title="Akwaaba MoMo SMS sender refused", message=f"MoMo SMS from a sender not on the list: {sender!r}")
+		return {"status": "ignored", "reason": "sender not allowed"}
 
 	text = message or ""
 	if not text.strip():
@@ -203,23 +224,29 @@ def momo_sms_inbox(secret=None, message=None, sender=None):
 	original_user = frappe.session.user
 	frappe.set_user("Administrator")
 	try:
-		# --- Strategy 1: explicit order reference in the SMS ---
 		order_name = _find_order_ref_in_text(text)
-
-		# --- Strategy 2: unique amount match among pending orders ---
 		amount = _parse_amount(text)
-		if not order_name and amount:
-			order_name = _unique_pending_order_for_amount(amount)
 
 		if not order_name:
 			frappe.log_error(
-				f"Unmatched MoMo SMS from {sender!r}: {text[:400]}",
-				"Akwaaba MoMo SMS unmatched",
+				title="Akwaaba MoMo SMS unmatched",
+				message=f"Unmatched MoMo SMS from {sender!r}: {text[:400]}",
 			)
 			return {"status": "unmatched", "amount": amount}
 
+		row = frappe.db.get_value("Sales Order", order_name, ["docstatus", "grand_total", "total"], as_dict=True)
+		total = flt(row.grand_total or row.total)
+		if row.docstatus != 0 or not amount or amount < total - 0.01:
+			frappe.log_error(
+				title="Akwaaba MoMo SMS needs review",
+				message=f"MoMo SMS for {order_name} needs a person: docstatus {row.docstatus}, "
+				f"SMS amount {amount}, order total {total}. From {sender!r}: {text[:400]}",
+			)
+			return {"status": "needs_review", "order": order_name, "amount": amount}
+
 		result = confirm_momo_payment(order_name, txn_id=_parse_txn_id(text), amount=amount)
-		return {"status": "auto_confirmed", "order": order_name, "accounting": result.get("notes")}
+		return {"status": "auto_confirmed" if result.get("ok") else "accounting_incomplete",
+		        "order": order_name, "accounting": result.get("notes")}
 	finally:
 		frappe.set_user(original_user)
 
@@ -239,6 +266,8 @@ def _notify_admin_pending(order_name, order_row, payer_phone, txn_id):
 	     delivers inside a 24h session window, so this is a bonus, not the
 	     primary alert.
 	"""
+	from akwaaba_theme.api import notify_managers
+
 	total = flt(order_row.grand_total or order_row.total)
 	ccy = order_row.currency or "GHS"
 	subject = f"MoMo payment to confirm · {order_name}"
@@ -252,26 +281,7 @@ def _notify_admin_pending(order_name, order_row, payer_phone, txn_id):
 	)
 
 	# 1. Desk notification to every System Manager
-	try:
-		managers = frappe.get_all(
-			"Has Role",
-			filters={"role": "System Manager", "parenttype": "User"},
-			pluck="parent",
-		)
-		for user in set(managers):
-			if user in ("Administrator", "Guest"):
-				continue
-			frappe.get_doc({
-				"doctype": "Notification Log",
-				"subject": subject,
-				"email_content": body,
-				"for_user": user,
-				"type": "Alert",
-				"document_type": "Sales Order",
-				"document_name": order_name,
-			}).insert(ignore_permissions=True)
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Akwaaba MoMo: desk notify failed")
+	notify_managers(subject, body, order_name)
 
 	# 2. Comment on the order
 	_comment(order_name,
@@ -295,7 +305,7 @@ def _notify_admin_pending(order_name, order_row, payer_phone, txn_id):
 			}).insert(ignore_permissions=True)
 	except Exception:
 		# WhatsApp is a bonus channel; never let it break the claim flow.
-		frappe.log_error(frappe.get_traceback(), "Akwaaba MoMo: WhatsApp notify failed")
+		frappe.log_error(title="Akwaaba MoMo: WhatsApp notify failed", message=frappe.get_traceback())
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +338,6 @@ def _parse_amount(text):
 	  'Payment received for GHS 250.00 from ...'
 	  'You have received GHS1,250.00 from ...'
 	"""
-	import re
 	m = re.search(r"(?:GH[S₵]|GHC|₵)\s*([\d,]+(?:\.\d{1,2})?)", text, re.IGNORECASE)
 	if not m:
 		return None
@@ -340,7 +349,6 @@ def _parse_amount(text):
 
 def _parse_txn_id(text):
 	"""Best-effort extraction of a MoMo transaction id (long digit/alnum run)."""
-	import re
 	m = re.search(r"(?:transaction id|txn id|reference|ref)[:\s]*([A-Za-z0-9]{6,})",
 	              text, re.IGNORECASE)
 	if m:
@@ -351,23 +359,9 @@ def _parse_txn_id(text):
 
 def _find_order_ref_in_text(text):
 	"""Return an existing Sales Order name mentioned in the SMS, or None."""
-	import re
-	for token in re.findall(r"[A-Za-z]{2,}-?\d{2,}[-\d]*", text):
-		candidate = token.replace("AKW-", "")
-		if frappe.db.exists("Sales Order", candidate):
-			return candidate
+	for token in re.findall(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+", text):
+		candidate = token[4:] if token.upper().startswith("AKW-") else token
+		name = frappe.db.exists("Sales Order", candidate)
+		if name:
+			return name
 	return None
-
-
-def _unique_pending_order_for_amount(amount):
-	"""If exactly one Awaiting-Confirmation order matches this amount, return it."""
-	rows = frappe.get_all(
-		"Sales Order",
-		filters={PAYMENT_STATUS_FIELD: STATUS_AWAITING, "docstatus": 0},
-		fields=["name", "grand_total", "total"],
-	)
-	matches = [
-		r.name for r in rows
-		if abs(flt(r.grand_total or r.total) - flt(amount)) < 0.01
-	]
-	return matches[0] if len(matches) == 1 else None

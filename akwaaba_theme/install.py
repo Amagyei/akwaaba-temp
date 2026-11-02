@@ -26,6 +26,28 @@ def after_install():
 	print("Done.")
 
 
+def ensure_schema():
+	"""Bring an existing site up to date. Runs after every migrate.
+
+	`after_install` never runs again on a live site, so this is how new custom
+	fields reach it. Custom fields always follow this file. Notifications and
+	scripts are only created when missing, so edits made in Desk survive.
+	"""
+	_create_custom_fields()
+	for spec in _ECOMMERCE_NOTIFICATIONS:
+		if not frappe.db.exists("Notification", spec["name"]):
+			_upsert_notification(spec)
+	if not frappe.db.exists("Client Script", _HOVER_VIDEO_SCRIPT_NAME):
+		_ensure_hover_video_client_script()
+	if not frappe.db.exists("Server Script", _REVERSE_SERVER_SCRIPT_NAME):
+		_ensure_reverse_order_server_script()
+	if not frappe.db.exists("Client Script", _REVERSAL_CLIENT_SCRIPT_NAME):
+		_ensure_reverse_order_client_script()
+	if not frappe.db.exists("Client Script", _MOMO_CONFIRM_CLIENT_SCRIPT_NAME):
+		_ensure_momo_confirm_client_script()
+	frappe.db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Custom fields
 # ---------------------------------------------------------------------------
@@ -34,8 +56,8 @@ def _create_custom_fields():
 	"""Custom fields on Website Item (media) and Item Group (display).
 
 	Also installs cross-version compat shims for ERPNext develop against
-	Frappe v16. All storefront fields are also exported via hooks.fixtures
-	so `bench migrate` on prod picks them up without re-running install.
+	Frappe v16. `ensure_schema` runs this after every migrate, so this list is
+	the one source of truth for custom fields.
 	"""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
@@ -79,6 +101,27 @@ def _create_custom_fields():
 				"fieldtype": "Data",
 				"insert_after": "momo_payer_phone",
 				"description": "MoMo transaction id from the customer's SMS receipt.",
+			},
+			{
+				"fieldname": "payment_reference",
+				"label": "Payment Reference",
+				"fieldtype": "Data",
+				"insert_after": "momo_txn_id",
+				"read_only": 1,
+				"allow_on_submit": 1,
+				"no_copy": 1,
+				"description": "Gateway or MoMo reference of the payment that confirmed this order.",
+			},
+			{
+				"fieldname": "order_key",
+				"label": "Order Link Key",
+				"fieldtype": "Data",
+				"insert_after": "payment_reference",
+				"read_only": 1,
+				"hidden": 1,
+				"no_copy": 1,
+				"print_hide": 1,
+				"description": "Secret part of the customer's link to this order.",
 			},
 		],
 		"Contact": [
@@ -305,7 +348,7 @@ _CUSTOMER_ORDER_PLACED_MESSAGE = f"""
   <p>Medaase{{% if doc.customer %}}, {{{{ frappe.db.get_value("Customer", doc.customer, "customer_name") or "" }}}}{{% endif %}}. Your order <strong>{{{{ doc.name }}}}</strong> is in.</p>
   <p>We'll confirm payment shortly and start preparing your pieces. Any questions, just reply to this email.</p>
 {_TABLE_ITEMS_BLOCK}
-  <p><a href="{{{{ frappe.utils.get_url() }}}}/order/{{{{ doc.name }}}}">View your order →</a></p>
+  <p><a href="{{{{ frappe.utils.get_url() }}}}/order/{{{{ doc.name }}}}/{{{{ doc.order_key }}}}">View your order →</a></p>
 </div>
 """.strip()
 
@@ -316,7 +359,7 @@ _CUSTOMER_PAYMENT_RECEIVED_MESSAGE = f"""
   <p>We've received your payment for order <strong>{{{{ doc.name }}}}</strong>.</p>
   <p>Your order is now confirmed and moves into preparation. We'll email again when it's on its way.</p>
 {_TABLE_ITEMS_BLOCK}
-  <p><a href="{{{{ frappe.utils.get_url() }}}}/order/{{{{ doc.name }}}}">View your order →</a></p>
+  <p><a href="{{{{ frappe.utils.get_url() }}}}/order/{{{{ doc.name }}}}/{{{{ doc.order_key }}}}">View your order →</a></p>
 </div>
 """.strip()
 
@@ -787,11 +830,12 @@ frappe.ui.form.on("Sales Order", {
                         freeze_message: __("Confirming payment…"),
                         callback: (r) => {
                             const m = r.message || {};
+                            const done = m.status === "confirmed";
                             frappe.msgprint({
-                                title: __("Payment Confirmed"),
+                                title: done ? __("Payment Confirmed") : __("Accounting Not Finished"),
                                 message: (m.notes || []).map(frappe.utils.escape_html).join("<br>") ||
                                     __("Order marked paid."),
-                                indicator: "green",
+                                indicator: done ? "green" : "orange",
                             });
                             frm.reload_doc();
                         },

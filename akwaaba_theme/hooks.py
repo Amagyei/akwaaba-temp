@@ -17,7 +17,9 @@ web_include_js = [
 home_page = "index"
 website_route_rules = [
     {"from_route": "/", "to_route": "index"},
-    # Route /order/<any-slug> to the order confirmation controller
+    # Route /order/<any-slug> to the order confirmation controller. The key is
+    # the secret part of a customer's link; without it the page shows no details.
+    {"from_route": "/order/<order_name>/<order_key>", "to_route": "order/detail"},
     {"from_route": "/order/<order_name>", "to_route": "order/detail"},
     # Bespoke product detail page. <path:slug> allows nested item routes
     # (e.g. /product/kente-collection/adinkra-print).
@@ -64,66 +66,13 @@ website_context = {
 
 # Seed catalog + configure webshop on first install of this app
 after_install = "akwaaba_theme.install.after_install"
-# Seeds Studio prompts/house style on a fresh deploy; no-op once they exist.
-after_migrate = ["akwaaba_theme.install.ensure_studio_defaults"]
-
-# Export custom fields so they migrate to prod on `bench migrate`
-# even without re-running install.py.
-fixtures = [
-	{
-		"dt": "Custom Field",
-		"filters": [
-			["dt", "in", ["Website Item", "Item Group", "Contact", "Address", "Sales Order"]],
-			["fieldname", "in", [
-				# Sales Order — direct-MoMo (manual) payment tracking
-				"akwaaba_momo_section",
-				"payment_status",
-				"momo_payer_phone",
-				"momo_txn_id",
-				# Website Item — media
-				"akwaaba_media_section",
-				"hover_video_file",
-				"hover_video_url",
-				"hover_video_poster_url",
-				"feature_on_hero",
-				"hero_position",
-				# Website Item — internal colorway tracking (length uses the
-				# existing Size variant attribute, not a custom field)
-				"colorway_code",
-				# Item Group — homepage/nav display metadata
-				"akwaaba_display_section",
-				"homepage_position",
-				"homepage_eyebrow",
-				"homepage_caption",
-				"show_in_nav",
-				# Contact — compat shim for erpnext develop against frappe v16
-				"is_billing_contact",
-				# Address — compat shims for erpnext develop against frappe v16
-				"is_your_company_address",
-				"tax_category",
-			]],
-		],
-	},
-	{
-		"dt": "Client Script",
-		"filters": [["name", "in", [
-			"Akwaaba Reverse Order Button",
-			"Akwaaba Hover Video Preview",
-			"Akwaaba Confirm MoMo Payment",
-		]]],
-	},
-	{
-		"dt": "Server Script",
-		"filters": [["name", "=", "akwaaba_reverse_order"]],
-	},
-	{
-		"dt": "Notification",
-		"filters": [["name", "in", [
-			"Akwaaba New Order Email",
-			"Akwaaba Order Placed (Customer)",
-			"Akwaaba Payment Received (Customer)",
-			"Akwaaba Order Dispatched (Customer)",
-			"Akwaaba Order Cancelled (Customer)",
-		]]],
-	},
+# Keeps custom fields current on live sites, and seeds Studio prompts and house
+# style on a fresh deploy.
+after_migrate = [
+	"akwaaba_theme.install.ensure_schema",
+	"akwaaba_theme.install.ensure_studio_defaults",
 ]
+
+scheduler_events = {
+	"daily": ["akwaaba_theme.api.retry_unsettled_orders"],
+}

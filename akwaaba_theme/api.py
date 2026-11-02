@@ -2,11 +2,12 @@
 
 - get_card_videos              : hover-video map for product cards
 - place_order                  : the guest checkout endpoint
-- get_order                    : light order status lookup
+- get_order                    : light order status lookup, needs the order's key
 - subscribe_newsletter         : homepage "Ntoma list" signup → Email Group
 - init_paystack_payment        : creates a Paystack transaction, returns checkout URL
 - verify_paystack_payment      : server-side verification of a Paystack reference
 - paystack_webhook             : Paystack event receiver (charge.success, etc.)
+- retry_unsettled_orders       : daily job, finishes paid orders missing records
 """
 
 import hashlib
@@ -21,7 +22,6 @@ from frappe.utils import flt
 
 
 DEFAULT_PRICE_LIST = "Akwaaba Retail"
-DEFAULT_COMPANY = "Akwaaba"
 
 
 # ---------------------------------------------------------------------------
@@ -91,14 +91,15 @@ def get_variant_options(template_item_code):
 # Guest checkout — place_order
 # ---------------------------------------------------------------------------
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60)
 def place_order(items, full_name, phone, email=None, address_line=None,
                 city=None, region=None, notes=None):
 	"""Create a Customer (if new) + Sales Order from the guest cart.
 
 	`items` is a JSON string { item_code: qty }.
-	Returns { name, total, currency, customer } so the frontend can redirect
-	to /order/<name>.
+	Returns { name, url, total, currency, customer }; the frontend redirects
+	to `url`, the order's private link.
 
 	The order is created in Draft state (not submitted). Admin reviews it
 	in ERPNext, then submits when payment is confirmed. Submission triggers
@@ -150,6 +151,7 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 	so.order_type = "Sales"
 	so.currency = "GHS"
 	so.selling_price_list = DEFAULT_PRICE_LIST
+	so.order_key = frappe.generate_hash(length=24)
 	if _has_field("Sales Order", "customer_address") and address:
 		so.customer_address = address
 	if _has_field("Sales Order", "shipping_address_name") and address:
@@ -171,6 +173,8 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 		if not wi:
 			frappe.throw(f"Item {code} is no longer available.")
 		price = flt(_lookup_price(code))
+		if price <= 0:
+			frappe.throw(f"{wi.web_item_name or code} can't be ordered online right now. Please message us.")
 		so.append("items", {
 			"item_code": code,
 			"item_name": wi.web_item_name or wi.item_name or code,
@@ -183,7 +187,7 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 	try:
 		so.insert(ignore_permissions=True)
 	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), "Akwaaba place_order failed")
+		frappe.log_error(title="Akwaaba place_order failed", message=frappe.get_traceback())
 		frappe.throw(
 			"We couldn't create your order. Please try again or contact us on WhatsApp.",
 			frappe.ValidationError,
@@ -196,6 +200,7 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 
 	return {
 		"name": so.name,
+		"url": order_path(so.name, so.order_key),
 		"total": so.grand_total or so.total,
 		"currency": so.currency,
 		"customer": customer,
@@ -207,15 +212,16 @@ def _place_order_impl(items, full_name, phone, email, address_line, city, region
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist(allow_guest=True)
-def get_order(name):
+def get_order(name, key=None):
 	"""Return a small, sanitized order summary for the confirmation page.
 
-	Only returns totals + item list. Order names are sequential and this is
-	open to guests, so it must never return the customer, phone or email —
-	anyone could walk SAL-ORD-…-00001, 00002, … and harvest contacts.
+	Only returns totals + item list, and only with the order's key: order names
+	are sequential, so anyone could otherwise walk SAL-ORD-…-00001, 00002, ….
 	"""
 	if not name:
 		frappe.throw("No order specified.")
+	if not order_access_ok(name, key):
+		frappe.throw("Order not found.")
 
 	so = frappe.db.get_value(
 		"Sales Order", name,
@@ -285,6 +291,21 @@ def subscribe_newsletter(email):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def order_path(name, key):
+	"""An order's private link. Order names are guessable; the key isn't."""
+	return f"/order/{name}/{key}" if key else f"/order/{name}"
+
+
+def order_access_ok(name, key):
+	"""May this caller see the order: its private key, or Desk rights on it."""
+	if not name or not frappe.db.exists("Sales Order", name):
+		return False
+	stored = frappe.db.get_value("Sales Order", name, "order_key")
+	if stored and key and hmac.compare_digest(str(stored), str(key)):
+		return True
+	return frappe.session.user != "Guest" and bool(frappe.has_permission("Sales Order", "read", doc=name))
+
 
 def _parse_items(raw):
 	if isinstance(raw, dict):
@@ -403,7 +424,7 @@ def _ensure_customer(full_name, phone, email):
 		ct.flags.ignore_mandatory = True
 		ct.insert(ignore_permissions=True)
 	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Akwaaba: contact create failed")
+		frappe.log_error(title="Akwaaba: contact create failed", message=frappe.get_traceback())
 
 	return c.name
 
@@ -425,16 +446,17 @@ def _ensure_customer_group(name):
 PAYSTACK_BASE = "https://api.paystack.co"
 
 
-@frappe.whitelist(allow_guest=True)
-def init_paystack_payment(order_name):
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60)
+def init_paystack_payment(order_name, key=None):
 	"""Ask Paystack to initialize a transaction for the Sales Order.
 
 	Returns { authorization_url, reference }. Frontend redirects to
 	authorization_url; Paystack hosts the MoMo/card modal, then bounces the
-	user back to /order/<name>?reference=<ref> which triggers verify.
+	user back to the order's link with ?reference=<ref>, which triggers verify.
 	"""
-	if not order_name:
-		frappe.throw("Missing order.", frappe.ValidationError)
+	if not order_name or not order_access_ok(order_name, key):
+		frappe.throw("Order not found.", frappe.ValidationError)
 
 	settings = _get_payment_settings()
 	if not settings or not settings.get("enabled") or not settings.get("secret_key"):
@@ -444,7 +466,7 @@ def init_paystack_payment(order_name):
 	rows = frappe.db.sql(
 		"""
 		SELECT name, customer, docstatus, grand_total, total, currency,
-		       contact_mobile, contact_email
+		       contact_mobile, contact_email, order_key
 		FROM `tabSales Order`
 		WHERE name = %s
 		LIMIT 1
@@ -462,6 +484,8 @@ def init_paystack_payment(order_name):
 			"authorization_url": None,
 			"reference": None,
 		}
+	if order.docstatus == 2:
+		frappe.throw("This order was cancelled, so it can't be paid.", frappe.ValidationError)
 
 	amount = flt(order.grand_total or order.total or 0)
 	if amount <= 0:
@@ -475,9 +499,11 @@ def init_paystack_payment(order_name):
 
 	email = order.contact_email or "guest@akwaaba.gh"
 
-	reference = f"AKW-{order.name}"
+	# A new reference per attempt: Paystack refuses a reference it has seen, so
+	# a fixed one would block paying again after an abandoned or failed try.
+	reference = f"AKW-{order.name}--{frappe.generate_hash(length=8)}"
 
-	callback_url = frappe.utils.get_url(f"/order/{order.name}")
+	callback_url = frappe.utils.get_url(order_path(order.name, order.order_key))
 
 	channels = ["card", "mobile_money"] if currency == "GHS" else ["card"]
 
@@ -507,16 +533,16 @@ def init_paystack_payment(order_name):
 			timeout=15,
 		)
 	except requests.RequestException as e:
-		frappe.log_error(str(e), "Paystack init request failed")
+		frappe.log_error(title="Paystack init request failed", message=str(e))
 		frappe.throw("Payment provider is unreachable. Please try again.", frappe.ValidationError)
 
 	if not r.ok:
-		frappe.log_error(r.text[:2000], f"Paystack init HTTP {r.status_code} for {order.name}")
+		frappe.log_error(title=f"Paystack init HTTP {r.status_code} for {order.name}", message=r.text[:2000])
 		frappe.throw("Payment provider rejected the request. Try again in a moment.", frappe.ValidationError)
 
 	body = r.json() or {}
 	if not body.get("status") or not body.get("data", {}).get("authorization_url"):
-		frappe.log_error(json.dumps(body)[:2000], f"Paystack init bad body for {order.name}")
+		frappe.log_error(title=f"Paystack init bad body for {order.name}", message=json.dumps(body)[:2000])
 		frappe.throw("Payment provider returned an unexpected response.", frappe.ValidationError)
 
 	return {
@@ -526,13 +552,20 @@ def init_paystack_payment(order_name):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(limit=30, seconds=60 * 60)
 def verify_paystack_payment(reference):
+	"""Public wrapper around verify_payment; see there."""
+	return verify_payment(reference)
+
+
+def verify_payment(reference):
 	"""Verify a Paystack transaction. Robust across all outcome states.
 
 	Returns { status, order, reason?, expected_amount?, actual_amount? }
 	Status values:
-	  - success            → paid and accounting completed
-	  - already_completed  → SO already submitted; idempotent no-op
+	  - success            → paid; `ok` says whether the accounting finished too
+	  - already_completed  → paid and every record exists; idempotent no-op
+	  - cancelled          → order was cancelled; any money needs refunding
 	  - failed             → Paystack reports failed
 	  - abandoned          → user closed modal
 	  - pending            → async MoMo, wait for webhook
@@ -554,12 +587,14 @@ def verify_paystack_payment(reference):
 	if order_name and frappe.db.exists("Sales Order", order_name):
 		so = frappe.db.get_value(
 			"Sales Order", order_name,
-			["name", "docstatus", "grand_total", "total", "currency"],
+			["name", "docstatus", "grand_total", "total", "currency", "payment_reference"],
 			as_dict=True,
 		)
 
-	# Idempotent short-circuit — if SO already submitted, don't re-hit Paystack
-	if so and so.docstatus == 1:
+	# Idempotent short-circuit, but only once every record exists: a paid order
+	# missing its invoice or payment falls through so this call can finish it.
+	settled = bool(so and so.docstatus == 1 and _accounting_settled(order_name, settings))
+	if settled and so.payment_reference in (None, "", reference):
 		return {"status": "already_completed", "order": order_name}
 
 	try:
@@ -569,11 +604,11 @@ def verify_paystack_payment(reference):
 			timeout=15,
 		)
 	except requests.RequestException as e:
-		frappe.log_error(str(e), f"Paystack verify network error for {reference}")
+		frappe.log_error(title=f"Paystack verify network error for {reference}", message=str(e))
 		return {"status": "error", "reason": "network"}
 
 	if not r.ok:
-		frappe.log_error(r.text[:1500], f"Paystack verify HTTP {r.status_code} for {reference}")
+		frappe.log_error(title=f"Paystack verify HTTP {r.status_code} for {reference}", message=r.text[:1500])
 		return {"status": "error", "reason": f"http_{r.status_code}"}
 
 	body = r.json() or {}
@@ -582,6 +617,11 @@ def verify_paystack_payment(reference):
 
 	if not so:
 		return {"status": "not_found", "reason": "no_matching_so"}
+
+	if _metadata_order(data) not in (None, order_name):
+		frappe.log_error(title="Paystack order mismatch",
+		                 message=f"Reference {reference} names {order_name}; Paystack metadata names {_metadata_order(data)}")
+		return {"status": "not_found", "reason": "order_mismatch"}
 
 	_log_paystack_attempt(order_name, reference, psk_status, data)
 
@@ -593,6 +633,10 @@ def verify_paystack_payment(reference):
 			"reason": data.get("gateway_response") or "not_success",
 		}
 
+	if so.docstatus == 2:
+		_flag_for_refund(order_name, reference, data, "was cancelled before the money arrived")
+		return {"status": "cancelled", "order": order_name}
+
 	# ---- SUCCESS PATH: hard-check amount + currency before we do accounting ----
 	expected = float(so.grand_total or so.total or 0)
 	expected_subunit = int(round(expected * 100))
@@ -602,9 +646,9 @@ def verify_paystack_payment(reference):
 
 	if actual_currency and expected_currency and actual_currency != expected_currency:
 		frappe.log_error(
-			f"Order {order_name}: currency mismatch. expected={expected_currency} actual={actual_currency}. "
+			title="Paystack currency mismatch",
+			message=f"Order {order_name}: currency mismatch. expected={expected_currency} actual={actual_currency}. "
 			f"Reference={reference}. Refusing to complete accounting.",
-			"Paystack currency mismatch",
 		)
 		return {
 			"status": "currency_mismatch",
@@ -615,9 +659,9 @@ def verify_paystack_payment(reference):
 
 	if actual_subunit != expected_subunit:
 		frappe.log_error(
-			f"Order {order_name}: amount mismatch. expected={expected_subunit} actual={actual_subunit}. "
+			title="Paystack amount mismatch",
+			message=f"Order {order_name}: amount mismatch. expected={expected_subunit} actual={actual_subunit}. "
 			f"Reference={reference}. Refusing to complete accounting.",
-			"Paystack amount mismatch",
 		)
 		return {
 			"status": "amount_mismatch",
@@ -626,15 +670,23 @@ def verify_paystack_payment(reference):
 			"actual_amount": actual_subunit / 100,
 		}
 
+	if settled:
+		# Everything's recorded under another reference, so this is a second payment.
+		_flag_for_refund(order_name, reference, data, "was already paid under another reference")
+		return {"status": "already_completed", "order": order_name}
+
 	# All checks pass — run the accounting cycle
 	result = _complete_accounting_cycle(order_name, reference, data)
-	return dict(result, status="success", order=order_name)
+	return dict(result, status="cancelled" if result.get("cancelled") else "success", order=order_name)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def paystack_webhook():
 	"""Paystack event webhook. Verifies HMAC-SHA512 signature, then handles
 	charge.success by submitting the linked Sales Order.
+
+	Answers 500 while the order's records are incomplete: Paystack resends on
+	any failure, and each resend retries the missing steps.
 	"""
 	settings = _get_payment_settings()
 	if not settings or not settings.get("secret_key"):
@@ -665,34 +717,49 @@ def paystack_webhook():
 	reference = data.get("reference") or ""
 
 	if event_type == "charge.success" and reference:
-		order_name = _reference_to_order(reference)
-		if order_name and frappe.db.exists("Sales Order", order_name):
-			# Amount/currency guard here too — webhook can't be less strict than verify
-			so = frappe.db.get_value(
-				"Sales Order", order_name,
-				["docstatus", "grand_total", "total", "currency"],
-				as_dict=True,
-			)
-			if so and so.docstatus != 1:
-				expected_subunit = int(round(float(so.grand_total or so.total or 0) * 100))
-				actual_subunit = int(data.get("amount") or 0)
-				expected_ccy = (so.currency or "GHS").upper()
-				actual_ccy = (data.get("currency") or "").upper()
-				if actual_subunit == expected_subunit and (
-					not actual_ccy or actual_ccy == expected_ccy
-				):
-					_log_paystack_attempt(order_name, reference, "success", data)
-					_complete_accounting_cycle(order_name, reference, data)
-				else:
-					frappe.log_error(
-						f"Webhook rejected: amount/currency mismatch. "
-						f"expected={expected_subunit} {expected_ccy}, "
-						f"actual={actual_subunit} {actual_ccy}",
-						f"Paystack webhook mismatch {order_name}",
-					)
+		result = _handle_charge_success(reference, data, settings)
+		if not result.get("ok", True):
+			frappe.local.response.http_status_code = 500
+			return {"ok": False, "reason": "accounting_incomplete"}
 
-	# Always 200 so Paystack stops retrying
 	return {"ok": True}
+
+
+def _handle_charge_success(reference, data, settings):
+	order_name = _metadata_order(data) or _reference_to_order(reference)
+	if not order_name or not frappe.db.exists("Sales Order", order_name):
+		return {"ok": True}
+
+	# Amount/currency guard here too — webhook can't be less strict than verify
+	so = frappe.db.get_value(
+		"Sales Order", order_name,
+		["docstatus", "grand_total", "total", "currency", "payment_reference"],
+		as_dict=True,
+	)
+	if so.docstatus == 2:
+		_flag_for_refund(order_name, reference, data, "was cancelled before the money arrived")
+		return {"ok": True}
+
+	expected_subunit = int(round(float(so.grand_total or so.total or 0) * 100))
+	actual_subunit = int(data.get("amount") or 0)
+	expected_ccy = (so.currency or "GHS").upper()
+	actual_ccy = (data.get("currency") or "").upper()
+	if actual_subunit != expected_subunit or (actual_ccy and actual_ccy != expected_ccy):
+		frappe.log_error(
+			title=f"Paystack webhook mismatch {order_name}",
+			message=f"Webhook rejected: amount/currency mismatch. "
+			f"expected={expected_subunit} {expected_ccy}, "
+			f"actual={actual_subunit} {actual_ccy}",
+		)
+		return {"ok": True}
+
+	if so.docstatus == 1 and _accounting_settled(order_name, settings):
+		if so.payment_reference not in (None, "", reference):
+			_flag_for_refund(order_name, reference, data, "was already paid under another reference")
+		return {"ok": True}
+
+	_log_paystack_attempt(order_name, reference, "success", data)
+	return _complete_accounting_cycle(order_name, reference, data)
 
 
 # ---------------------------------------------------------------------------
@@ -729,6 +796,7 @@ def _get_payment_settings():
 		"momo_instructions": doc.get("momo_instructions") or "",
 		"admin_notify_phone": doc.get("admin_notify_phone") or "",
 		"sms_inbox_secret": (doc.get_password("sms_inbox_secret", raise_exception=False) or "") if doc.get("sms_inbox_secret") else "",
+		"sms_allowed_senders": doc.get("sms_allowed_senders") or "",
 	}
 
 
@@ -736,13 +804,107 @@ def _reference_to_order(reference):
 	"""Reverse the reference format used in init_paystack_payment."""
 	if not reference:
 		return None
-	# Format: AKW-<sales-order-name>
+	# Format: AKW-<sales-order-name>--<attempt>
 	if reference.startswith("AKW-"):
-		return reference[4:]
+		return reference[4:].split("--", 1)[0]
 	# Fallback: last-attempt lookup by exact match
 	if frappe.db.exists("Sales Order", reference):
 		return reference
 	return None
+
+
+def _metadata_order(data):
+	"""The order we told Paystack this transaction is for, if it came back."""
+	meta = (data or {}).get("metadata")
+	if isinstance(meta, str):
+		try:
+			meta = json.loads(meta)
+		except ValueError:
+			return None
+	return (meta or {}).get("order_name") if isinstance(meta, dict) else None
+
+
+def _accounting_settled(order_name, settings):
+	"""Every record a paid order should have exists, as far as settings ask for."""
+	if not settings.get("auto_complete_accounting"):
+		return True
+	si_name = _existing_invoice_for_order(order_name)
+	return bool(si_name and _existing_pe_for_invoice(si_name))
+
+
+def _lock_order(order_name):
+	"""Take the order's row lock for this transaction; returns its docstatus."""
+	return frappe.db.get_value("Sales Order", order_name, "docstatus", for_update=True)
+
+
+def _flag_for_refund(order_name, reference, data, why):
+	"""Money arrived that can't be applied to the order. A person has to act."""
+	amount = flt((data or {}).get("amount") or 0) / 100
+	ccy = (data or {}).get("currency") or "GHS"
+	message = f"Order {order_name} {why}. Paystack reference {reference}, {ccy} {amount:,.2f}. Refund it in Paystack."
+	frappe.log_error(title=f"Paystack refund needed {order_name}", message=message)
+	notify_managers(f"Refund needed · {order_name}", message, order_name)
+	frappe.db.commit()
+
+
+def notify_managers(subject, body, order_name=None):
+	"""Desk bell for every System Manager. Never lets a failure spread."""
+	try:
+		managers = frappe.get_all(
+			"Has Role",
+			filters={"role": "System Manager", "parenttype": "User"},
+			pluck="parent",
+		)
+		for user in set(managers):
+			if user == "Guest":
+				continue
+			frappe.get_doc({
+				"doctype": "Notification Log",
+				"subject": subject,
+				"email_content": body,
+				"for_user": user,
+				"type": "Alert",
+				"document_type": "Sales Order" if order_name else None,
+				"document_name": order_name,
+			}).insert(ignore_permissions=True)
+	except Exception:
+		frappe.log_error(title="Akwaaba: desk notify failed", message=frappe.get_traceback())
+
+
+def retry_unsettled_orders():
+	"""Daily: finish paid orders missing an invoice or payment; report any stuck."""
+	settings = _get_payment_settings() or {}
+	if not settings.get("auto_complete_accounting"):
+		return
+
+	stuck = []
+	orders = frappe.get_all(
+		"Sales Order",
+		filters={
+			"docstatus": 1,
+			"payment_reference": ["is", "set"],
+			"transaction_date": [">=", frappe.utils.add_days(frappe.utils.today(), -90)],
+		},
+		fields=["name", "payment_reference"],
+	)
+	for row in orders:
+		if _accounting_settled(row.name, settings):
+			continue
+		if row.payment_reference.startswith("AKW-"):
+			try:
+				verify_payment(row.payment_reference)
+			except Exception:
+				frappe.log_error(title=f"Akwaaba retry failed for {row.name}", message=frappe.get_traceback())
+				frappe.db.rollback()
+			if _accounting_settled(row.name, settings):
+				continue
+		stuck.append(row.name)
+
+	if stuck:
+		message = f"Paid but missing an invoice or payment: {', '.join(stuck)}. See the Error Log for why."
+		frappe.log_error(title="Akwaaba paid orders missing records", message=message)
+		notify_managers(f"{len(stuck)} paid order(s) missing records", message)
+	frappe.db.commit()
 
 
 def _log_paystack_attempt(order_name, reference, status, data):
@@ -758,21 +920,27 @@ def _log_paystack_attempt(order_name, reference, status, data):
 			f"amount={(data or {}).get('amount', '?')} "
 			f"currency={(data or {}).get('currency', '?')}"
 		)
-		frappe.log_error(summary, f"Paystack attempt: {status}")
+		frappe.log_error(title=f"Paystack attempt: {status}", message=summary)
 	except Exception:
 		pass
 
 
 def _complete_accounting_cycle(order_name, reference, paystack_data):
 	"""On a successful payment: submit SO → create + submit Sales Invoice
-	→ create + submit Payment Entry. Idempotent — checks for existing docs
-	before creating.
+	→ create + submit Payment Entry. Safe to repeat: it finishes whatever is
+	still missing, and a concurrent call waits on the order's row lock.
+
+	Commits its own work, because the Paystack return runs inside a page GET
+	and Frappe rolls back whatever a GET leaves uncommitted. The submitted order
+	is committed first so a paid order stands even if the accounting fails; the
+	invoice and payment then succeed or roll back together.
 
 	Falls back to just submitting the SO (with a note) if
-	`auto_complete_accounting` is off or if account/MoP config is missing.
-	Every step logs its outcome so admin can trace what happened.
+	`auto_complete_accounting` is off. Every step logs its outcome so admin
+	can trace what happened.
 
-	Returns { so, si?, pe?, accounting_completed: bool, notes: [str,...] }
+	Returns { so, si?, pe?, accounting_completed, ok, cancelled?, notes: [str,...] }.
+	`ok` False means records are still missing and retrying is worthwhile.
 	"""
 	original_user = frappe.session.user
 	frappe.set_user("Administrator")
@@ -790,13 +958,19 @@ def _complete_accounting_cycle(order_name, reference, paystack_data):
 		paid_to = settings.get("card_account")
 
 	auto = bool(settings.get("auto_complete_accounting", True))
-	company = settings.get("company")
-	result = {"so": order_name, "notes": [], "accounting_completed": False}
+	result = {"so": order_name, "notes": [], "accounting_completed": False, "ok": False}
 
 	try:
+		# Commit first so the reads after the lock start a fresh snapshot and
+		# see anything another request saved while this one waited.
+		frappe.db.commit()
+		if _lock_order(order_name) == 2:
+			_flag_for_refund(order_name, reference, paystack_data, "was cancelled before the money arrived")
+			result.update(cancelled=True, ok=True)
+			result["notes"].append("SO cancelled; payment flagged for refund")
+			return result
+
 		so = frappe.get_doc("Sales Order", order_name)
-		if not company:
-			company = so.company
 
 		# --- STEP 1: submit SO (idempotent) ---
 		if so.docstatus != 1:
@@ -806,39 +980,41 @@ def _complete_accounting_cycle(order_name, reference, paystack_data):
 				f"Amount received: {so.currency} {amount:.2f}"
 			)
 			so.terms = (so.terms or "") + note
+			so.payment_reference = reference
 			so.flags.ignore_permissions = True
 			so.submit()
 			result["notes"].append("SO submitted")
 		else:
+			if not so.payment_reference:
+				so.db_set("payment_reference", reference, update_modified=False)
 			result["notes"].append("SO already submitted")
+		frappe.db.commit()
 
 		if not auto:
+			result["ok"] = True
 			result["notes"].append("auto_complete_accounting is off; stopping at SO")
 			return result
 
 		# --- STEP 2: Sales Invoice ---
+		_lock_order(order_name)
 		si_name = _existing_invoice_for_order(order_name)
 		if not si_name:
 			si_name = _make_and_submit_sales_invoice(order_name)
-			if si_name:
-				result["si"] = si_name
-				result["notes"].append(f"SI {si_name} submitted")
+			result["notes"].append(f"SI {si_name} submitted")
 		else:
-			result["si"] = si_name
 			result["notes"].append(f"SI {si_name} already existed")
-
-		if not si_name:
-			result["notes"].append("SI creation failed; stopping")
-			return result
+		result["si"] = si_name
 
 		# --- STEP 3: Payment Entry ---
+		missing = None
 		if not paid_to:
-			result["notes"].append(
-				"No receiving account configured (Akwaaba Payment Settings); PE skipped."
-			)
-			return result
-		if not mop_name or not frappe.db.exists("Mode of Payment", mop_name):
-			result["notes"].append(f"Mode of Payment '{mop_name}' missing; PE skipped.")
+			missing = "No receiving account configured (Akwaaba Payment Settings); PE skipped."
+		elif not mop_name or not frappe.db.exists("Mode of Payment", mop_name):
+			missing = f"Mode of Payment '{mop_name}' missing; PE skipped."
+		if missing:
+			frappe.log_error(title=f"Paystack accounting incomplete {order_name}", message=f"{order_name}: {missing}")
+			result["notes"].append(missing)
+			frappe.db.commit()
 			return result
 
 		pe_name = _existing_pe_for_invoice(si_name)
@@ -850,21 +1026,23 @@ def _complete_accounting_cycle(order_name, reference, paystack_data):
 				reference=reference,
 				received_amount=amount,
 			)
-			if pe_name:
-				result["pe"] = pe_name
-				result["notes"].append(f"PE {pe_name} submitted")
+			result["notes"].append(f"PE {pe_name} submitted")
 		else:
-			result["pe"] = pe_name
 			result["notes"].append(f"PE {pe_name} already existed")
+		result["pe"] = pe_name
+		frappe.db.commit()
 
-		if result.get("pe"):
-			result["accounting_completed"] = True
+		result.update(accounting_completed=True, ok=True)
 	except Exception:
+		frappe.db.rollback()
 		frappe.log_error(
-			frappe.get_traceback(),
-			f"Paystack accounting cycle failed for {order_name}",
+			title=f"Paystack accounting cycle failed for {order_name}",
+			message=frappe.get_traceback(),
 		)
+		frappe.db.commit()
 		result["notes"].append("accounting_cycle: exception (see Error Log)")
+		result.pop("si", None)
+		result.pop("pe", None)
 	finally:
 		frappe.set_user(original_user)
 
@@ -877,7 +1055,7 @@ def _existing_invoice_for_order(order_name):
 		SELECT DISTINCT sii.parent
 		FROM `tabSales Invoice Item` sii
 		JOIN `tabSales Invoice` si ON si.name = sii.parent
-		WHERE sii.sales_order = %s AND si.docstatus != 2
+		WHERE sii.sales_order = %s AND si.docstatus = 1
 		LIMIT 1
 		""",
 		(order_name,),
@@ -893,7 +1071,7 @@ def _existing_pe_for_invoice(si_name):
 		JOIN `tabPayment Entry` pe ON pe.name = per.parent
 		WHERE per.reference_name = %s
 			AND per.reference_doctype = 'Sales Invoice'
-			AND pe.docstatus != 2
+			AND pe.docstatus = 1
 		LIMIT 1
 		""",
 		(si_name,),
@@ -908,43 +1086,30 @@ def _make_and_submit_sales_invoice(order_name):
 		from erpnext.selling.doctype.sales_order.mapper import make_sales_invoice
 	except ImportError:
 		from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
-	try:
-		si = make_sales_invoice(source_name=order_name)
-		si.set_missing_values()
-		si.flags.ignore_permissions = True
-		si.insert()
-		si.submit()
-		return si.name
-	except Exception:
-		frappe.log_error(
-			frappe.get_traceback(),
-			f"Paystack make_sales_invoice failed for {order_name}",
-		)
-		return None
+	si = make_sales_invoice(source_name=order_name)
+	si.set_missing_values()
+	si.flags.ignore_permissions = True
+	si.insert()
+	si.submit()
+	return si.name
 
 
 def _make_and_submit_payment_entry(si_name, mode_of_payment, paid_to, reference, received_amount):
 	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
-	try:
-		pe = get_payment_entry("Sales Invoice", si_name)
-		pe.mode_of_payment = mode_of_payment
-		pe.paid_to = paid_to
-		pe.reference_no = reference
-		pe.reference_date = frappe.utils.today()
-		if received_amount and abs(received_amount - float(pe.paid_amount or 0)) > 0.01:
-			# Trust Paystack for the actual amount when it disagrees slightly
-			pe.paid_amount = received_amount
-			pe.received_amount = received_amount
-		pe.flags.ignore_permissions = True
-		pe.insert()
-		pe.submit()
-		return pe.name
-	except Exception:
-		frappe.log_error(
-			frappe.get_traceback(),
-			f"Paystack make_payment_entry failed for SI {si_name}",
-		)
-		return None
+
+	pe = get_payment_entry("Sales Invoice", si_name)
+	pe.mode_of_payment = mode_of_payment
+	pe.paid_to = paid_to
+	pe.reference_no = reference
+	pe.reference_date = frappe.utils.today()
+	if received_amount and abs(received_amount - float(pe.paid_amount or 0)) > 0.01:
+		# Trust Paystack for the actual amount when it disagrees slightly
+		pe.paid_amount = received_amount
+		pe.received_amount = received_amount
+	pe.flags.ignore_permissions = True
+	pe.insert()
+	pe.submit()
+	return pe.name
 
 
 # ---------------------------------------------------------------------------
@@ -992,6 +1157,6 @@ def _ensure_customer_address(customer, name, phone, address_line, city, region):
 	try:
 		addr.insert(ignore_permissions=True)
 	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Akwaaba: address create failed")
+		frappe.log_error(title="Akwaaba: address create failed", message=frappe.get_traceback())
 		return None
 	return addr.name
