@@ -25,6 +25,7 @@ FIELDS = {
 		"description", "web_long_description", "website_image", "slideshow", "on_backorder",
 		"has_variants", "variant_of", "hover_video_file", "hover_video_url", "hover_video_poster_url",
 		"feature_on_hero", "hero_position", "colorway_code",
+		"loom_strip", "loom_thumb", "loom_warp_colors", "loom_bobbin_color",
 	],
 	"Website Slideshow": ["slideshow_name"],
 }
@@ -34,7 +35,7 @@ FIELDS = {
 FILE_FIELDS = {
 	"Item Group": ["image"],
 	"Item": ["image"],
-	"Website Item": ["website_image", "hover_video_file", "hover_video_url", "hover_video_poster_url"],
+	"Website Item": ["website_image", "hover_video_file", "hover_video_url", "hover_video_poster_url", "loom_strip", "loom_thumb"],
 }
 
 SLIDE_FIELDS = ["image", "heading", "description", "url"]

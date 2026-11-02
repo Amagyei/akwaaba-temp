@@ -237,6 +237,36 @@ def _create_custom_fields():
 					"same attribute the storefront already renders as chips."
 				),
 			},
+			{
+				"fieldname": "loom_strip",
+				"label": "Loom Strip",
+				"fieldtype": "Attach Image",
+				"insert_after": "colorway_code",
+				"description": (
+					"The cloth's strip for the loom at the top of its collection. "
+					"Made by prototypes/kente-photos/tools/cut.py. Empty means not on the loom."
+				),
+			},
+			{
+				"fieldname": "loom_thumb",
+				"label": "Loom Thumbnail",
+				"fieldtype": "Attach Image",
+				"insert_after": "loom_strip",
+			},
+			{
+				"fieldname": "loom_warp_colors",
+				"label": "Loom Warp Colours",
+				"fieldtype": "Small Text",
+				"insert_after": "loom_thumb",
+				"hidden": 1,
+			},
+			{
+				"fieldname": "loom_bobbin_color",
+				"label": "Loom Bobbin Colour",
+				"fieldtype": "Data",
+				"insert_after": "loom_warp_colors",
+				"hidden": 1,
+			},
 		],
 		"Item Group": [
 			{
@@ -1086,10 +1116,8 @@ def ensure_studio_defaults():
 		added += 1
 	_seed_models_and_arcs()
 
-	settings = frappe.get_single("Akwaaba Studio Settings")
-	if not (settings.house_style or "").strip():
-		settings.house_style = STUDIO_HOUSE_STYLE
-		settings.flags.ignore_mandatory = True
-		settings.save(ignore_permissions=True)
+	# Not a full save: on a fresh site, the defaults it would validate don't exist yet.
+	if not (frappe.db.get_single_value("Akwaaba Studio Settings", "house_style") or "").strip():
+		frappe.db.set_single_value("Akwaaba Studio Settings", "house_style", STUDIO_HOUSE_STYLE)
 	frappe.db.commit()
 	print(f"Akwaaba: Studio prompts seeded (+{added}).")

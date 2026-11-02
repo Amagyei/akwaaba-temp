@@ -1,0 +1,164 @@
+/* Kente collection: a still loom above the shop grid, one strip per cloth.
+   Loaded only on a collection that has cloths on the loom. Tokens come from akwaaba.css. */
+.loom-section {
+	--auto: 6s; /* time each weave stays before rotating to the next */
+	--line: rgba(31, 27, 22, 0.12);
+	--font-script: 'Cormorant Garamond', 'Playfair Display', serif;
+}
+.loom-section * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* ---------- layout (mobile-first) ---------- */
+.loom-section {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 2.5rem 16px 3rem;
+	display: grid;
+	gap: 1.75rem;
+	grid-template-areas: "head" "stage" "picker";
+}
+@media (min-width: 900px) {
+	.loom-section {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-areas: "head stage" "picker stage";
+		column-gap: 4rem;
+		row-gap: 2rem;
+		padding: 4.5rem 2rem 4rem;
+	}
+	.loom-head { align-self: end; }
+	.loom-picker { align-self: start; }
+}
+.loom-head { grid-area: head; }
+.eyebrow {
+	font-size: .72rem;
+	font-weight: 600;
+	letter-spacing: .18em;
+	text-transform: uppercase;
+	color: var(--kente-gold-deep);
+}
+.loom-title {
+	font-family: var(--font-display);
+	font-weight: 700;
+	font-size: clamp(2.1rem, 4.6vw, 3.4rem);
+	line-height: 1.05;
+	margin: .6rem 0 1rem;
+}
+.loom-title em { font-weight: 400; color: var(--kente-gold-deep); }
+.loom-sub { margin: 0; max-width: 30rem; line-height: 1.6; color: var(--charcoal-soft); }
+
+/* ---------- stage ---------- */
+.loom-stage {
+	grid-area: stage;
+	position: relative;
+	display: flex;
+	justify-content: center;
+	padding: 4.25rem 12px 12px;
+	border-radius: 24px;
+	background: radial-gradient(120% 80% at 50% 35%, #FCF8F1 0%, #F1E6D3 70%, #E9DCC5 100%);
+	box-shadow: inset 0 0 0 1px var(--line);
+}
+.loom-stage svg { display: block; width: 100%; max-width: 400px; height: auto; max-height: 74vh; }
+.loom-now { position: absolute; top: 16px; left: 20px; right: 72px; }
+.loom-now__label {
+	font-size: .66rem;
+	font-weight: 600;
+	letter-spacing: .16em;
+	text-transform: uppercase;
+	color: var(--charcoal-soft);
+}
+.loom-now__name { font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; }
+.loom-toggle {
+	position: absolute;
+	top: 14px;
+	right: 14px;
+	width: 44px;
+	height: 44px;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	border: 1px solid var(--line);
+	background: var(--cream-lighter);
+	color: var(--charcoal);
+	cursor: pointer;
+}
+.loom-toggle:hover { background: #fff; }
+.loom-toggle .i-play { display: none; }
+.is-user-paused .loom-toggle .i-play { display: block; }
+.is-user-paused .loom-toggle .i-pause { display: none; }
+.warp { transition: opacity .6s ease; }
+
+/* ---------- picker ---------- */
+.loom-picker { grid-area: picker; }
+.weave-now__name { font-family: var(--font-display); font-weight: 600; font-size: 1.5rem; line-height: 1.2; }
+.weave-now__meaning {
+	font-family: var(--font-script);
+	font-style: italic;
+	font-weight: 500;
+	font-size: 1.1rem;
+	line-height: 1.25;
+	color: var(--charcoal-soft);
+}
+.weave-now__meaning:empty { display: none; }
+.weave-bar {
+	position: relative;
+	overflow: hidden;
+	height: 2px;
+	margin: .8rem 0 1.1rem;
+	background: var(--line);
+}
+.weave-bar__fill {
+	position: absolute;
+	inset: 0;
+	background: var(--kente-gold);
+	transform: scaleX(0);
+	transform-origin: left;
+}
+.weave-bar.is-timing .weave-bar__fill { animation: weave-fill var(--auto) linear forwards; }
+.is-still .weave-bar.is-timing .weave-bar__fill { animation-play-state: paused; }
+@keyframes weave-fill { to { transform: scaleX(1); } }
+/* one small strip per cloth, showing the top of each */
+.weaves {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+	gap: 10px;
+}
+.weave {
+	display: block;
+	width: 100%;
+	aspect-ratio: 1 / 2.4;
+	padding: 0;
+	border: 0;
+	border-radius: 4px;
+	background-color: var(--cream-lighter);
+	background-size: 100% auto;
+	background-position: center top;
+	cursor: pointer;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .15);
+	transition: transform .2s, box-shadow .2s;
+}
+.weave:hover { transform: translateY(-2px); }
+.weave[aria-pressed="true"] {
+	box-shadow: 0 0 0 2px var(--cream), 0 0 0 4px var(--charcoal), 0 10px 18px -10px rgba(31, 27, 22, .6);
+}
+@media (prefers-reduced-motion: reduce) { .weave { transition: none; } .weave:hover { transform: none; } }
+.loom-cta {
+	display: inline-flex;
+	align-items: center;
+	gap: .5rem;
+	min-height: 44px;
+	margin-top: 1.25rem;
+	padding: 0 1.4rem;
+	border-radius: 999px;
+	background: var(--charcoal);
+	color: var(--cream-lighter);
+	font-size: .92rem;
+	font-weight: 500;
+	text-decoration: none;
+}
+.loom-cta:hover { background: #000; }
+.loom-toggle:focus-visible, .weave:focus-visible, .loom-cta:focus-visible {
+	outline: 2px solid var(--kente-gold-deep);
+	outline-offset: 2px;
+}

@@ -1,12 +1,14 @@
 {% extends "templates/web.html" %}
 {% from "templates/includes/akwaaba/product_card.html" import akw_card %}
 {% from "templates/includes/akwaaba/footer.html" import akwaaba_footer %}
+{% from "templates/includes/akwaaba/kente_loom.html" import kente_loom %}
 
 {% block title %}{{ title }}{% endblock %}
 
 {% block head_include %}
 	<meta name="description" content="{{ meta_description }}">
 	<meta name="theme-color" content="#0F0F0F">
+	{% if loom_cloths %}<link rel="stylesheet" href="/assets/akwaaba_theme/css/kente-loom.css">{% endif %}
 {% endblock %}
 
 {% block page_content %}
@@ -37,6 +39,11 @@
 </nav>
 
 <!-- SORT BAR -->
+{% if loom_cloths %}
+{{ kente_loom(loom_cloths) }}
+<script src="/assets/akwaaba_theme/js/kente-loom.js" defer></script>
+{% endif %}
+
 <div class="akw-shop__toolbar">
 	<div class="akw-shop__result">
 		Showing <strong>{{ items|length }}</strong> of {{ total }}

@@ -1,0 +1,110 @@
+{#
+	The loom above a Kente collection. `cloths` holds each published cloth with a
+	strip: name, route, meaning, strip, thumb, weft, warp. Strips are files, loaded
+	as each one comes up. kente-loom.js fills in the dynamic parts of the SVG.
+#}
+{% macro kente_loom(cloths) -%}
+<section class="loom-section" id="loom-section">
+	<div class="loom-head">
+		<div class="eyebrow">Kente</div>
+		<h2 class="loom-title">Choose your<br><em>weave.</em></h2>
+		<p class="loom-sub">Every Kente strip is a sentence: four to six woven sections, each with its own pattern. Pick one to see it on the loom.</p>
+	</div>
+
+	<div class="loom-stage" id="loom-stage">
+		<div class="loom-now">
+			<div class="loom-now__label">On the loom</div>
+			<div class="loom-now__name" id="loom-now"></div>
+		</div>
+		<button type="button" class="loom-toggle" id="loom-toggle" aria-label="Pause rotation">
+			<svg class="i-pause" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
+			<svg class="i-play" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9.5-5.5z" fill="currentColor"/></svg>
+		</button>
+
+		<svg id="loom" viewBox="0 0 400 720" role="img" aria-label="A kente strip on a narrow-strip loom">
+			<defs id="loom-defs">
+				<linearGradient id="woodV" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5E391E"/><stop offset=".45" stop-color="#9C6737"/><stop offset="1" stop-color="#55331B"/></linearGradient>
+				<linearGradient id="woodH" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B7824A"/><stop offset=".55" stop-color="#8A5930"/><stop offset="1" stop-color="#5A3720"/></linearGradient>
+				<linearGradient id="rollWood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4E2F19"/><stop offset=".3" stop-color="#B98650"/><stop offset=".6" stop-color="#8A5930"/><stop offset="1" stop-color="#3F2513"/></linearGradient>
+				<linearGradient id="rollShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A0F06" stop-opacity=".55"/><stop offset=".25" stop-color="#1A0F06" stop-opacity=".08"/><stop offset=".4" stop-color="#FFF" stop-opacity=".22"/><stop offset=".58" stop-color="#FFF" stop-opacity="0"/><stop offset="1" stop-color="#1A0F06" stop-opacity=".65"/></linearGradient>
+				<linearGradient id="edgeShade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1A0F06" stop-opacity=".32"/><stop offset=".07" stop-color="#1A0F06" stop-opacity="0"/><stop offset=".93" stop-color="#1A0F06" stop-opacity="0"/><stop offset="1" stop-color="#1A0F06" stop-opacity=".32"/></linearGradient>
+				<linearGradient id="fellShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A0F06" stop-opacity=".38"/><stop offset="1" stop-color="#1A0F06" stop-opacity="0"/></linearGradient>
+				<linearGradient id="warpFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF" stop-opacity="0"/><stop offset=".28" stop-color="#FFF" stop-opacity="1"/></linearGradient>
+				<mask id="warpMask" maskUnits="userSpaceOnUse" x="0" y="-10" width="400" height="266"><rect x="0" y="-10" width="400" height="266" fill="url(#warpFade)"/></mask>
+				<!-- square at the fell, rounded where the cloth wraps the beam -->
+				<clipPath id="stripClip"><path d="M150 246H250V656Q250 664 242 664H158Q150 664 150 656Z"/></clipPath>
+				<filter id="soft" x="-10%" y="-300%" width="120%" height="700%"><feGaussianBlur stdDeviation="5"/></filter>
+			</defs>
+
+			<ellipse cx="200" cy="706" rx="190" ry="7" fill="#3A2614" opacity=".3" filter="url(#soft)"/>
+			<rect x="28" y="14" width="16" height="684" rx="4" fill="url(#woodV)"/>
+			<rect x="356" y="14" width="16" height="684" rx="4" fill="url(#woodV)"/>
+
+			<!-- warp threads running back to the drag stone -->
+			<g id="warps" mask="url(#warpMask)"></g>
+
+			<!-- heddle cords: pulley → heddles → toe stirrups -->
+			<g fill="none" stroke="#6B4A2E" stroke-width="1.1" stroke-linecap="round">
+				<line x1="191" y1="59" x2="124" y2="76"/>
+				<line x1="209" y1="59" x2="276" y2="76"/>
+				<line x1="124" y1="116" x2="124" y2="124"/>
+				<line x1="276" y1="116" x2="276" y2="124"/>
+				<line x1="124" y1="164" x2="124" y2="668"/>
+				<line x1="276" y1="164" x2="276" y2="668"/>
+			</g>
+			<g id="heddle1"></g>
+			<g id="heddle2"></g>
+
+			<rect x="18" y="26" width="364" height="16" rx="5" fill="url(#woodH)"/>
+			<rect x="195" y="40" width="10" height="10" fill="#5A3720"/>
+			<circle cx="200" cy="58" r="9" fill="url(#woodH)" stroke="#4A2C16" stroke-width="1"/>
+			<circle cx="200" cy="58" r="2.4" fill="#3A2213"/>
+
+			<!-- beater (reed) -->
+			<g fill="none" stroke="#6B4A2E" stroke-width="1.1">
+				<line x1="110" y1="42" x2="110" y2="178"/>
+				<line x1="290" y1="42" x2="290" y2="178"/>
+			</g>
+			<g id="reed"></g>
+			<rect x="104" y="178" width="192" height="9" rx="3" fill="url(#woodH)"/>
+			<rect x="104" y="208" width="192" height="9" rx="3" fill="url(#woodH)"/>
+			<rect x="104" y="178" width="6" height="39" rx="2" fill="#6E4526"/>
+			<rect x="290" y="178" width="6" height="39" rx="2" fill="#6E4526"/>
+
+			<!-- cloth beam -->
+			<rect x="44" y="632" width="42" height="12" rx="3" fill="url(#woodH)"/>
+			<rect x="314" y="632" width="42" height="12" rx="3" fill="url(#woodH)"/>
+			<rect x="84" y="622" width="232" height="32" rx="16" fill="url(#rollWood)"/>
+
+			<!-- the woven strip: one layer per weave -->
+			<g clip-path="url(#stripClip)">
+				<g id="strip"></g>
+				<rect x="150" y="246" width="100" height="418" fill="url(#edgeShade)"/>
+				<rect x="150" y="246" width="100" height="22" fill="url(#fellShade)"/>
+				<rect x="150" y="612" width="100" height="52" fill="url(#rollShade)"/>
+			</g>
+
+			<rect x="18" y="684" width="364" height="14" rx="5" fill="url(#woodH)"/>
+			<circle cx="124" cy="674" r="6" fill="none" stroke="#5A3720" stroke-width="2.5"/>
+			<circle cx="276" cy="674" r="6" fill="none" stroke="#5A3720" stroke-width="2.5"/>
+
+			<!-- shuttle, parked beside the shed -->
+			<g transform="translate(78 232)">
+				<path d="M-25 0C-17-7.5 17-7.5 25 0C17 7.5-17 7.5-25 0Z" fill="url(#woodH)" stroke="#4A2C16" stroke-width=".8"/>
+				<rect id="bobbin" x="-9" y="-2.8" width="18" height="5.6" rx="2.8"/>
+			</g>
+		</svg>
+	</div>
+
+	<div class="loom-picker">
+		<div class="weave-now" aria-live="polite">
+			<div class="weave-now__name" id="weave-name"></div>
+			<div class="weave-now__meaning" id="weave-meaning"></div>
+		</div>
+		<div class="weave-bar" id="weave-bar"><span class="weave-bar__fill"></span></div>
+		<ul class="weaves" id="weaves" aria-label="Choose a weave"></ul>
+		<a class="loom-cta" id="loom-cta" href="#">Shop this weave <span aria-hidden="true">→</span></a>
+	</div>
+	<script type="application/json" id="loom-data">{{ cloths | tojson }}</script>
+</section>
+{%- endmacro %}

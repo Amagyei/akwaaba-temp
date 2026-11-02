@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Naming bash turns on pipefail, so a failure before a pipe to tee fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   checks:
     runs-on: ubuntu-24.04

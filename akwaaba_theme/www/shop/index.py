@@ -53,6 +53,7 @@ def get_context(context):
 	context.sort = sort
 	context.category = category_param
 	context.category_name = item_group_name or "All Collections"
+	context.loom_cloths = _loom_cloths(item_group_name)
 
 	context.title = context.category_name + " — Serwa Kollections"
 	context.meta_description = (
@@ -66,8 +67,9 @@ def _resolve_group(param: str):
 	"""Accept either 'Kente Collection' or 'kente-collection'."""
 	if not param:
 		return None
-	if frappe.db.exists("Item Group", param):
-		return param
+	exact = frappe.db.exists("Item Group", param)
+	if exact:
+		return exact
 	slug_match = frappe.db.get_value(
 		"Item Group", {"route": param.strip("/")}, "name"
 	)
@@ -134,6 +136,31 @@ def _query_items(item_group, sort, start, page_size):
 	)[0][0]
 
 	return rows, total
+
+
+def _loom_cloths(item_group):
+	"""Published cloths of this collection that have a strip for the loom."""
+	if not item_group:
+		return []
+	rows = frappe.get_all(
+		"Website Item",
+		filters={"item_group": item_group, "published": 1, "loom_strip": ["is", "set"]},
+		fields=["web_item_name", "item_name", "item_code", "route", "short_description",
+		        "loom_strip", "loom_thumb", "loom_warp_colors", "loom_bobbin_color"],
+		order_by="item_code asc",
+	)
+	return [
+		{
+			"name": r.web_item_name or r.item_name or r.item_code,
+			"route": r.route or r.item_code,
+			"meaning": r.short_description or "",
+			"strip": r.loom_strip,
+			"thumb": r.loom_thumb,
+			"warp": r.loom_warp_colors or "",
+			"weft": r.loom_bobbin_color or "",
+		}
+		for r in rows
+	]
 
 
 def _attach_variant_options(rows):

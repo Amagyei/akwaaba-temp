@@ -1,9 +1,10 @@
 """Cut each cloth's blocks out of its photo and stack them into one loom strip.
 
 usage: python3 -I cut.py <photos dir> <out dir>
-Writes <out>/strips.js (the CLOTHS entries for kente-loom.html) and <out>/strip-<key>.jpg.
+Writes <out>/strips.js (the CLOTHS entries for kente-loom.html), <out>/strip-<key>.jpg and
+<out>/thumb-<key>.jpg, and <out>/cloths.json for import_cloths.py to load into the shop.
 """
-import base64, io, math, os, sys
+import base64, io, json, math, os, sys
 from PIL import Image, ImageEnhance, ImageOps
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,7 +31,7 @@ def cut(im, q, upright):
 
 
 hexc = lambda c: '%02X%02X%02X' % tuple(c)
-entries = []
+entries, cloths = [], []
 for key, name, photo, quads, *opt in CLOTHS:
     opt = opt[0] if opt else {}
     src = photo if isinstance(photo, str) else f'cloth-photo-{photo:02d}.jpg'
@@ -44,7 +45,9 @@ for key, name, photo, quads, *opt in CLOTHS:
         y += block.height + SEP
     assert y >= H, f'{key}: blocks fill only {y}px of {H}'
     strip = ImageEnhance.Color(strip).enhance(1.08)
-    strip.save(f'{OUT}/strip-{key}.jpg', quality=80)
+    strip.save(f'{OUT}/strip-{key}.jpg', quality=62, optimize=True, progressive=True)
+    # the picker only shows the top of each strip, small
+    strip.crop((0, 0, W, round(W * 2.4))).resize((96, 230), Image.LANCZOS).save(f'{OUT}/thumb-{key}.jpg', quality=60, optimize=True)
     buf = io.BytesIO()
     strip.save(buf, 'JPEG', quality=66, optimize=True, progressive=True)
     # warp threads above the fell carry the colours of the strip's first rows
@@ -53,8 +56,10 @@ for key, name, photo, quads, *opt in CLOTHS:
     # bobbin: the cloth's most used colour
     pal = strip.quantize(6)
     weft = pal.getpalette()[3 * max(range(6), key=lambda i: pal.histogram()[i]):][:3]
+    cloths.append({'key': key, 'name': name, 'photo': src, 'weft': f'#{hexc(weft)}', 'warp': warp})
     entries.append(f"\t\t{{ name: '{name}', photo: '{src}', weft: '#{hexc(weft)}',\n"
                    f"\t\t\twarp: '{warp}',\n"
                    f"\t\t\tsrc: 'data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode()}' }},\n")
     print(key, name, len(buf.getvalue()) // 1024, 'KB')
 open(f'{OUT}/strips.js', 'w').write(''.join(entries))
+json.dump(cloths, open(f'{OUT}/cloths.json', 'w'), indent=1)
