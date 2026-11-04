@@ -75,8 +75,8 @@ def _call(method, url, path, *, json=None, timeout=30):
 
 
 def submit_job(*, url, prompt, image_bytes, aspect_ratio="3:4", image_size="1K", seed=None, timeout=60):
-	"""Queue a drawing on the image Mac and return its job id. The same request again returns
-	the same job, so a retry after a dropped connection doesn't draw twice."""
+	"""Queue a drawing on the image Mac and return its job id. The same request with the same
+	seed returns the same job, so a retry after a dropped connection doesn't draw twice."""
 	width, height = dimensions(aspect_ratio, image_size)
 	body = {
 		"prompt": prompt,
@@ -120,9 +120,11 @@ def job_result(*, url, job_id):
 		raise GeminiError("The local image tool didn't return an image.")
 
 
-def acknowledge_job(*, url, job_id):
-	"""Tell the image Mac the draft is safe here, so it can delete the job's photo and result."""
+def forget_job(*, url, job_id):
+	"""Tell the image Mac we're done with a job: it stops drawing it and deletes its photo and
+	result. Returns False if the Mac can't be reached; it deletes a finished job after a month."""
 	try:
-		_call("DELETE", url, f"/jobs/{job_id}")
+		_call("DELETE", url, f"/jobs/{job_id}", timeout=10)
+		return True
 	except Unreachable:
-		pass  # it keeps the draft for a month; nothing is lost
+		return False

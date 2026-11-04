@@ -15,6 +15,7 @@ chosen ones onto the catalog (see studio/catalog.py), so nothing a phone loses
 mid-way — or an AI call already paid for — is thrown away.
 """
 
+import hashlib
 import io
 import json
 import random
@@ -36,6 +37,7 @@ OPTION_KINDS = ("Size", "Colour")
 ENGINE_GEMINI = "gemini"
 ENGINE_LOCAL = "local"
 STALE_AFTER_SECS = 300  # a "Generating" session older than this was abandoned
+STORE_TRIES = 5  # a finished drawing that won't save here: stop asking after this many tries
 GALLERY_KINDS = ("AI", "AI Raw")
 SUPPORTING_KINDS = ("Original", "Extra")
 
@@ -110,12 +112,13 @@ def bootstrap():
 def get_session(session):
 	require_studio_user()
 	sess = _get_session(session)
-	if sess.status == "Generating" and sess.host_jobs:
+	if sess.host_jobs:
 		# Opening the page is a good moment to look: finished drawings turn up as drafts at once.
 		try:
 			collect_session(session)
 			sess = _get_session(session)
 		except Exception:
+			frappe.db.rollback()
 			frappe.log_error(title=f"Studio: couldn't collect images for {session}")
 	return _payload(sess)
 
@@ -235,7 +238,7 @@ def remove_rows(session, rows):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist(methods=["POST"])
-def generate(session, prompts, model=None, arc=None, engine=None, option_label=None):
+def generate(session, prompts, model=None, arc=None, engine=None, option_label=None, garment_length=None):
 	"""Run each prompt against the source photo; slice and store the results.
 
 	Prompts run in parallel. A failed prompt doesn't sink the others — its
@@ -253,6 +256,9 @@ def generate(session, prompts, model=None, arc=None, engine=None, option_label=N
 	# Drawings queued on the image Mac don't block more: they're waiting in line, not running here.
 	if current.status == "Generating" and not _is_stale(current) and not current.host_jobs:
 		frappe.throw("Still working on the last request — hang on a moment.")
+	sess.reload()  # as it stands now that the row is ours
+	if garment_length is not None:
+		sess.db_set("garment_length", " ".join(garment_length.split())[:140] or None, update_modified=False)
 
 	s = _settings()
 	if not cint(s.enabled):
@@ -275,7 +281,7 @@ def generate(session, prompts, model=None, arc=None, engine=None, option_label=N
 		ai_model, size = _model_for(p, s)
 		jobs.append({
 			"prompt": p, "model": ai_model, "size": size,
-			"text": _full_prompt(p, s, person, story),
+			"text": _full_prompt(p, s, person, story, sess.garment_length),
 			"label": f"{person.name} · {story.name}" if cint(p.uses_model_arc) else None,
 		})
 	source = _file_bytes(sess, _source_for(sess, option_label))
@@ -334,7 +340,7 @@ def generate(session, prompts, model=None, arc=None, engine=None, option_label=N
 				errors.append({"prompt": p.name, "title": p.title, "error": f"Couldn't process the image: {e}"})
 
 		has_ai = any(r.kind in GALLERY_KINDS for r in sess.images)
-		sess.status = "Review" if has_ai else "Draft"
+		sess.status = "Generating" if sess.host_jobs else ("Review" if has_ai else "Draft")
 		sess.est_cost_usd = cost
 		sess.generating_since = None
 		sess.last_error = "\n".join(f"{e['title']}: {e['error']}" for e in errors) or None
@@ -367,14 +373,32 @@ def _host_jobs(sess):
 		return []
 
 
+def _retry_seeds(sess):
+	"""Drawings to carry on rather than start afresh: {job key: {seed, job_id}}."""
+	try:
+		return dict(json.loads(sess.host_retry_seeds)) if sess.host_retry_seeds else {}
+	except ValueError:
+		return {}
+
+
+def _job_key(text, option_label):
+	"""The same prompt on the same photo is the same drawing, whatever led to it."""
+	return hashlib.sha256(f"{option_label or ''}\n{text}".encode()).hexdigest()[:16]
+
+
 def _queue_on_host(sess, jobs, source, url, option_label):
 	waiting = _host_jobs(sess)
+	retries = _retry_seeds(sess)
 	queued, errors = [], []
 	for job in jobs:
 		p = job["prompt"]
-		# A double tap shouldn't draw the same style twice.
-		if any(w["prompt"] == p.name and (w.get("option_label") or None) == (option_label or None) for w in waiting + queued):
+		key = _job_key(job["text"], option_label)
+		# A double tap shouldn't draw the same thing twice. Another model or arc is another drawing.
+		if any(w.get("key") == key for w in waiting + queued):
 			continue
+		# A try that failed, or whose answer got lost, keeps its seed: the Mac then knows the
+		# job and carries on from what it has. Redoing a finished drawing gets a new look.
+		retry = retries.setdefault(key, {"seed": random.randrange(2**31)})
 		try:
 			job_id = local_engine.submit_job(
 				url=url,
@@ -382,13 +406,13 @@ def _queue_on_host(sess, jobs, source, url, option_label):
 				image_bytes=source,
 				aspect_ratio=p.aspect_ratio or "3:4",
 				image_size=job["size"],
-				seed=random.randrange(2**31),  # a redo should look different, not the same again
+				seed=retry["seed"],
 			)
 		except gemini.GeminiError as e:
 			errors.append({"prompt": p.name, "title": p.title, "error": str(e)})
 			continue
 		queued.append({
-			"job_id": job_id, "prompt": p.name, "label": job["label"],
+			"job_id": job_id, "key": key, "seed": retries.pop(key)["seed"], "prompt": p.name, "label": job["label"],
 			"option_label": option_label or None, "sent": str(now_datetime()),
 		})
 
@@ -396,8 +420,8 @@ def _queue_on_host(sess, jobs, source, url, option_label):
 		sess.host_jobs = json.dumps(waiting + queued)
 		sess.status = "Generating"
 		sess.generating_since = now_datetime()
-	if errors:
-		sess.last_error = "\n".join(f"{e['title']}: {e['error']}" for e in errors)
+	sess.host_retry_seeds = json.dumps(retries) if retries else None
+	sess.last_error = "\n".join(f"{e['title']}: {e['error']}" for e in errors) or None
 	sess.save(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -406,11 +430,31 @@ def _queue_on_host(sess, jobs, source, url, option_label):
 	return out
 
 
+def _store_host_result(sess, j, run_no, url):
+	"""Fetch a finished drawing and add it to the session: all of it, or nothing."""
+	data = local_engine.job_result(url=url, job_id=j["job_id"])
+	rows_before = len(sess.images)
+	frappe.db.savepoint("studio_store_run")
+	try:
+		_store_run(sess, frappe.get_doc(PROMPT, j["prompt"]), run_no, data, j.get("label"), j.get("option_label"))
+	except Exception:
+		del sess.images[rows_before:]
+		frappe.db.rollback(save_point="studio_store_run")
+		raise
+
+
+def _keep_for_retry(retries, j):
+	"""What's on the Mac stays there, so choosing this style again carries on from it."""
+	if j.get("key") and j.get("seed") is not None:
+		retries[j["key"]] = {"seed": j["seed"], "job_id": j["job_id"]}
+
+
 def collect_session(name):
 	"""Fetch what the image Mac has finished for this session. Returns True if anything changed.
 
 	An unreachable Mac is not an error: whatever is still out there stays on the list
-	and is asked for again next time.
+	and is asked for again next time. The Mac's copy of a drawing is only let go once
+	the drawing is safely saved here.
 	"""
 	url = (_settings().local_engine_url or "").strip()
 	if not url or not frappe.db.exists(SESSION, name):
@@ -421,9 +465,10 @@ def collect_session(name):
 	if not waiting:
 		return False
 
-	remaining, errors, collected = [], [], []
+	retries = _retry_seeds(sess)
+	remaining, errors, stored = [], [], []
+	changed, offline = False, False
 	run_no = max([cint(r.run) for r in sess.images] or [0])
-	offline = False
 	for j in waiting:
 		if offline:
 			remaining.append(j)
@@ -444,25 +489,32 @@ def collect_session(name):
 			remaining.append(j)
 		elif status == "done":
 			try:
-				data = local_engine.job_result(url=url, job_id=j["job_id"])
+				_store_host_result(sess, j, run_no + 1, url)
 				run_no += 1
-				_store_run(sess, frappe.get_doc(PROMPT, j["prompt"]), run_no, data, j.get("label"), j.get("option_label"))
-				collected.append(j)
+				stored.append(j)
 			except local_engine.Unreachable:
 				offline = True
 				remaining.append(j)
 			except Exception as e:  # noqa: BLE001 — shown on the page, logged below
 				frappe.log_error(title=f"Studio: couldn't store {j['prompt']} for {name}")
-				errors.append(f"{title}: Couldn't process the image: {e}")
-				collected.append(j)
-		else:  # failed, or the Mac no longer knows the job
+				changed = True
+				j["tries"] = cint(j.get("tries")) + 1
+				if j["tries"] < STORE_TRIES:
+					remaining.append(j)
+				else:
+					errors.append(f"{title}: Couldn't process the image: {e}")
+					_keep_for_retry(retries, j)
+		elif status == "failed":
+			errors.append(f"{title}: {state.get('error') or 'The image Mac could not draw this.'}")
+			_keep_for_retry(retries, j)
+		else:  # the Mac no longer knows the job
 			errors.append(f"{title}: {state.get('error') or 'The image Mac lost this job.'}")
-			collected.append(j)
 
-	if len(remaining) == len(waiting):
+	if not changed and len(remaining) == len(waiting):
 		return False
 
 	sess.host_jobs = json.dumps(remaining) if remaining else None
+	sess.host_retry_seeds = json.dumps(retries) if retries else None
 	if errors:
 		sess.last_error = "\n".join(errors)
 	if not remaining:
@@ -470,19 +522,30 @@ def collect_session(name):
 		sess.status = "Review" if any(r.kind in GALLERY_KINDS for r in sess.images) else "Draft"
 	sess.save(ignore_permissions=True)
 	frappe.db.commit()
-	for j in collected:  # only now that the drafts are saved here is the Mac's copy not needed
-		local_engine.acknowledge_job(url=url, job_id=j["job_id"])
+	for j in stored:  # only now that the drafts are saved here is the Mac's copy not needed
+		local_engine.forget_job(url=url, job_id=j["job_id"])
 	return True
 
 
 def collect_host_jobs():
 	"""Scheduler: bring home whatever the image Mac has finished, for every waiting session."""
-	for name in frappe.get_all(SESSION, filters={"status": "Generating", "host_jobs": ["is", "set"]}, pluck="name"):
+	for name in frappe.get_all(SESSION, filters={"host_jobs": ["is", "set"]}, pluck="name"):
 		try:
 			collect_session(name)
+			frappe.db.rollback()  # nothing left to save: let go of this row before the next session
 		except Exception:
 			frappe.db.rollback()
 			frappe.log_error(title=f"Studio: couldn't collect images for {name}")
+
+
+def _forget_on_host(sess):
+	"""A session is ending: stop what's still queued for it and drop what's kept for it.
+	Best effort. Whatever the image Mac can't be told now, it deletes by itself after a month."""
+	url = (_settings().local_engine_url or "").strip()
+	job_ids = [j.get("job_id") for j in _host_jobs(sess)] + [r.get("job_id") for r in _retry_seeds(sess).values()]
+	for job_id in filter(None, job_ids):
+		if not url or not local_engine.forget_job(url=url, job_id=job_id):
+			break
 
 
 def _store_run(sess, prompt, run_no, data, run_label=None, option_label=None):
@@ -534,6 +597,8 @@ def finalize(session, data):
 	for r in sess.images:
 		if r.name in selection:
 			r.include = cint(selection[r.name])
+		elif selection and r.kind in GALLERY_KINDS:
+			r.include = 0  # came back from the image Mac after the page last looked: nobody chose it
 		r.is_main = 1 if r.name == data.get("main") else 0
 		if r.is_main:
 			r.include = 1
@@ -590,6 +655,8 @@ def finalize(session, data):
 			wi = catalog.create_item(**common, **kw)
 		title = item_name
 
+	_forget_on_host(sess)
+	sess.host_jobs = sess.host_retry_seeds = sess.generating_since = None
 	sess.item = item_code
 	sess.title = title
 	sess.status = "Completed"
@@ -612,6 +679,7 @@ def finalize(session, data):
 def discard(session):
 	require_studio_user()
 	sess = _get_session(session, editable=True)
+	_forget_on_host(sess)
 	frappe.delete_doc(SESSION, sess.name, ignore_permissions=True)  # takes its files with it
 	return "ok"
 
@@ -644,7 +712,7 @@ def _model_for(prompt, s):
 	return model, gemini.resolve_size(model, size)
 
 
-def _full_prompt(prompt, s, person=None, story=None):
+def _full_prompt(prompt, s, person=None, story=None, garment_length=None):
 	text = (prompt.prompt or "").strip()
 	if cint(prompt.uses_model_arc):
 		text = text.replace("{story}", _full_story(prompt, person, story))
@@ -659,6 +727,9 @@ def _full_prompt(prompt, s, person=None, story=None):
 			"with no gaps, borders, frames, captions or dividing lines between them. "
 			"Keep each panel's subject fully inside its own panel."
 		)
+	if garment_length:
+		# Image models tend to shorten long garments unless told.
+		parts.append(f"Garment length: {garment_length}. Wherever the whole garment is in frame, its hem falls at exactly this length.")
 	if (s.house_style or "").strip():
 		parts.append(s.house_style.strip())
 	return "\n\n".join(parts)
@@ -821,8 +892,11 @@ def _payload(sess):
 		"name": sess.name,
 		"title": sess.title,
 		"status": sess.status,
-		"busy": sess.status == "Generating" and (bool(sess.host_jobs) or not _is_stale(sess)),
+		# Something running here right now. Drawings waiting on the image Mac are `queued`, and
+		# don't hold the page up: they may take hours, and the drafts already back can be reviewed.
+		"busy": sess.status == "Generating" and not sess.host_jobs and not _is_stale(sess),
 		"queued": len(_host_jobs(sess)),
+		"garment_length": sess.garment_length,
 		"item": sess.item,
 		"est_cost": flt(sess.est_cost_usd, 4),
 		"source": sess.source_image,

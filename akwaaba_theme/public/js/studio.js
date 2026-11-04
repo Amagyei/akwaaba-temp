@@ -41,6 +41,7 @@
 		engine: ((S_first(bootEl, "engines")) || {}).key || "",
 		optKind: "",           // "", Size or Colour
 		optRows: [],           // [{label, price}], including rows still being typed
+		length: "",            // the garment's length, told to the image model
 		sourceLabel: "",       // which option's photo the AI starts from
 		extraLabel: "",        // which option the next added photos belong to
 	};
@@ -195,6 +196,7 @@
 		if (isNew) {
 			S.optKind = sess.option_kind || "";
 			S.optRows = (sess.options || []).slice();
+			S.length = sess.garment_length || "";
 		}
 		var labels = (sess.options || []).map(function (o) { return o.label; });
 		if (labels.indexOf(S.sourceLabel) < 0) S.sourceLabel = labels[0] || "";
@@ -210,6 +212,32 @@
 			var first = galleryRows().filter(function (r) { return r.kind === "AI"; })[0];
 			if (first) S.main = first.id;
 		}
+		watchQueue();
+	}
+
+	// While drawings wait on the image Mac, keep looking: each look also brings home what's
+	// finished. Someone typing isn't interrupted; the next look picks up what they missed.
+	function watchQueue() {
+		clearTimeout(watchQueue._t);
+		if (!S.session || !S.session.queued) return;
+		watchQueue._t = setTimeout(function () {
+			var before = S.session;
+			if (!before || !before.queued) return;
+			if (S.busy || document.visibilityState !== "visible" || isTyping()) return watchQueue();
+			api("get_session", { session: before.name }, { get: true }).then(function (sess) {
+				if (!S.session || S.session.name !== sess.name) return;
+				var changed = sess.queued !== before.queued || sess.runs.length !== before.runs.length ||
+					sess.last_error !== before.last_error;
+				if (changed && !isTyping()) { applySession(sess); render(); } else watchQueue();
+			}, function () { watchQueue(); });
+		}, 15000);
+	}
+
+	function isTyping() {
+		var el = document.activeElement;
+		if (!el) return false;
+		return el.tagName === "TEXTAREA" || el.tagName === "SELECT" ||
+			(el.tagName === "INPUT" && el.type !== "checkbox" && el.type !== "file");
 	}
 
 	function galleryRows() {
@@ -366,6 +394,8 @@
 				return '<option value="' + esc(e.key) + '"' + (e.key === S.engine ? " selected" : "") + ">" + esc(e.label) + "</option>";
 			}).join("") + "</select>");
 		}
+		html += field("Garment length", '<input data-story="length" list="stu-lengths" autocomplete="off" placeholder="e.g. floor-length maxi" value="' + esc(S.length) + '">' +
+			'<datalist id="stu-lengths"><option value="mini"><option value="knee-length"><option value="midi"><option value="ankle-length"><option value="floor-length maxi"></datalist>');
 		var options = S.session.options || [];
 		if (options.length) {
 			html += field("Start from the photo of", '<select data-story="sourceLabel">' + options.map(function (o) {
@@ -412,7 +442,9 @@
 
 	function viewResults() {
 		var runs = S.session.runs;
-		if (!runs.length && !S.errors.length) return "";
+		var queued = S.session.queued || 0;
+		var problem = S.errors.length ? "" : S.session.last_error;
+		if (!runs.length && !S.errors.length && !queued && !problem) return "";
 		var html = '<section class="stu-card stu-step" id="stu-results">' +
 			head(3, "Pick photos") +
 			'<p class="stu-muted">★ marks the main photo. ✓ keeps a photo in the gallery. Tap a photo to see it bigger.</p>';
@@ -438,6 +470,14 @@
 			return '<div class="stu-note stu-note--error"><strong>' + esc(e.title) + ":</strong> " + esc(e.error) +
 				' <button type="button" class="stu-link" data-act="retry" data-prompt="' + esc(e.prompt) + '">Try again</button></div>';
 		}).join("");
+		if (problem) {
+			html += '<div class="stu-note stu-note--error">' + esc(problem).replace(/\n/g, "<br>") +
+				"<br>Choose the style again to try once more. It carries on from any photos already drawn.</div>";
+		}
+		if (queued) {
+			html += '<p class="stu-note stu-note--warn">' + queued + (queued > 1 ? " drawings are" : " drawing is") +
+				" waiting on the image Mac. Drafts appear here as they're ready, and you can close this page.</p>";
+		}
 		return html + "</section>";
 	}
 
@@ -642,6 +682,7 @@
 			arc: S.arc,
 			engine: S.engine,
 			option_label: S.sourceLabel,
+			garment_length: S.length,
 		}).then(function (sess) {
 			return sess;
 		}, function (e) {
@@ -673,6 +714,8 @@
 	}
 
 	function save() {
+		var waiting = S.session.queued || 0;
+		if (waiting && !window.confirm((waiting > 1 ? waiting + " drawings are" : "A drawing is") + " still waiting on the image Mac. Save without " + (waiting > 1 ? "them" : "it") + "?")) return;
 		var kept = keptGallery();
 		var selection = {};
 		allRows().forEach(function (r) { selection[r.id] = S.inc[r.id] ? 1 : 0; });

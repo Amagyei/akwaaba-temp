@@ -104,6 +104,8 @@ class FakeLocalTool(http.server.BaseHTTPRequestHandler):
 	requests_seen = []
 	jobs = {}
 	finished = True  # flip to False to play a Mac that is still drawing
+	failed = False  # flip to True to play a Mac that couldn't draw
+	lose_answer = False  # flip to True to play a connection that drops before the answer
 
 	def _send(self, status, payload):
 		body = json.dumps(payload).encode()
@@ -116,8 +118,12 @@ class FakeLocalTool(http.server.BaseHTTPRequestHandler):
 	def do_POST(self):
 		body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
 		FakeLocalTool.requests_seen.append((self.path, body))
-		job_id = f"job{len(FakeLocalTool.jobs) + 1}"
+		# Like the real one, the same prompt and seed on the same photo is the same job.
+		job_id = f"job-{body['seed']}-{hash(body['prompt'])}"
 		FakeLocalTool.jobs[job_id] = body
+		if FakeLocalTool.lose_answer:
+			self.close_connection = True
+			return
 		self._send(202, {"job_id": job_id, "status": "queued"})
 
 	def do_GET(self):
@@ -127,6 +133,8 @@ class FakeLocalTool(http.server.BaseHTTPRequestHandler):
 		if len(parts) == 3:
 			image = base64.b64encode(jpeg_bytes(400, 500)).decode()
 			return self._send(200, {"images": [image]})
+		if FakeLocalTool.failed:
+			return self._send(200, {"status": "failed", "error": "The Mac ran out of memory."})
 		self._send(200, {"status": "done" if FakeLocalTool.finished else "running"})
 
 	def do_DELETE(self):
@@ -151,12 +159,11 @@ class TestLocalEngine(FormTestCase):
 		frappe.db.set_single_value(studio.SETTINGS, "local_engine_url", self.url)
 		frappe.db.commit()
 		self.addCleanup(lambda: (frappe.db.set_single_value(studio.SETTINGS, "local_engine_url", ""), frappe.db.commit()))
-
-	def setUp(self):
-		super().setUp()
 		FakeLocalTool.requests_seen.clear()
 		FakeLocalTool.jobs.clear()
 		FakeLocalTool.finished = True
+		FakeLocalTool.failed = False
+		FakeLocalTool.lose_answer = False
 
 	def test_local_run_is_queued_then_collected_as_a_free_sliced_draft(self):
 		sess = make_session()
@@ -164,7 +171,7 @@ class TestLocalEngine(FormTestCase):
 			out = studio.generate(sess.name, [story_prompt()], model=ABENA, arc=ARC_1, engine=studio.ENGINE_LOCAL)
 		paid.assert_not_called()
 		# Handed over, not waited for.
-		self.assertEqual((out["status"], out["busy"], out["queued"], out["runs"]), ("Generating", True, 1, []))
+		self.assertEqual((out["status"], out["busy"], out["queued"], out["runs"]), ("Generating", False, 1, []))
 		path, body = FakeLocalTool.requests_seen[0]
 		self.assertEqual(path, "/jobs")
 		self.assertTrue(body["init_images"][0])
@@ -183,7 +190,7 @@ class TestLocalEngine(FormTestCase):
 		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
 		self.assertFalse(studio.collect_session(sess.name))
 		out = studio.get_session(sess.name)
-		self.assertEqual((out["status"], out["busy"], out["queued"]), ("Generating", True, 1))
+		self.assertEqual((out["status"], out["busy"], out["queued"]), ("Generating", False, 1))
 
 	def test_an_unreachable_mac_keeps_the_job_for_later(self):
 		sess = make_session()
@@ -211,6 +218,143 @@ class TestLocalEngine(FormTestCase):
 		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
 		self.assertEqual(out["queued"], 1)
 		self.assertEqual(len(FakeLocalTool.requests_seen), 1)
+
+	def test_another_model_on_the_same_style_is_another_drawing(self):
+		FakeLocalTool.finished = False
+		sess = make_session()
+		studio.generate(sess.name, [story_prompt()], model=ABENA, arc=ARC_1, engine=studio.ENGINE_LOCAL)
+		out = studio.generate(sess.name, [story_prompt()], model="Akosua", arc=ARC_1, engine=studio.ENGINE_LOCAL)
+		self.assertEqual(out["queued"], 2)
+		out = studio.generate(sess.name, [story_prompt()], model="Akosua", arc=ARC_1, engine=studio.ENGINE_LOCAL)
+		self.assertEqual((out["queued"], len(FakeLocalTool.requests_seen)), (2, 2))
+
+	def test_a_lost_answer_retried_finds_the_same_job(self):
+		sess = make_session()
+		FakeLocalTool.lose_answer = True
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertEqual((out["queued"], len(out["errors"])), (0, 1))
+		self.assertEqual(len(FakeLocalTool.jobs), 1)  # the Mac did get it
+
+		FakeLocalTool.lose_answer = False
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertEqual((out["queued"], out["errors"]), (1, []))
+		self.assertEqual(len(FakeLocalTool.jobs), 1)  # …and draws it once
+		self.assertIsNone(frappe.db.get_value(studio.SESSION, sess.name, "host_retry_seeds"))
+
+	def test_redoing_a_finished_drawing_gets_a_new_look(self):
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertTrue(studio.collect_session(sess.name))
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		seeds = [body["seed"] for _path, body in FakeLocalTool.requests_seen]
+		self.assertEqual(len(set(seeds)), 2)
+
+	def test_a_failed_drawing_stays_on_the_mac_and_a_retry_carries_on(self):
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		FakeLocalTool.failed = True
+		self.assertTrue(studio.collect_session(sess.name))
+		out = studio.get_session(sess.name)
+		self.assertEqual((out["queued"], out["status"]), (0, "Draft"))
+		self.assertIn("ran out of memory", out["last_error"])
+		self.assertEqual(len(FakeLocalTool.jobs), 1)  # what it finished is still there
+
+		FakeLocalTool.failed = False
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertEqual((out["queued"], out["last_error"]), (1, None))
+		seeds = {body["seed"] for _path, body in FakeLocalTool.requests_seen}
+		self.assertEqual(len(seeds), 1)
+
+	def test_a_drawing_that_will_not_save_stays_on_the_mac_until_it_does(self):
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+
+		def half_saved(sess, *args, **kwargs):
+			sess.append("images", {"image": "/private/files/half.jpg", "kind": "AI", "run": 1, "panel": 1})
+			raise OSError("No space left on device")
+
+		with patch.object(studio, "_store_run", side_effect=half_saved):
+			for _try in range(studio.STORE_TRIES - 1):
+				self.assertTrue(studio.collect_session(sess.name))
+				self.assertEqual(studio._get_session(sess.name).images[-1].kind, "Original")
+				self.assertEqual(frappe.db.get_value(studio.SESSION, sess.name, "status"), "Generating")
+			self.assertEqual(len(FakeLocalTool.jobs), 1)
+			self.assertTrue(studio.collect_session(sess.name))
+
+		out = studio.get_session(sess.name)
+		self.assertEqual((out["queued"], out["runs"]), (0, []))
+		self.assertIn("No space left", out["last_error"])
+		self.assertEqual(len(FakeLocalTool.jobs), 1)  # given up on for now, but not thrown away
+
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertEqual(len(FakeLocalTool.jobs), 1)  # the same drawing again
+		self.assertTrue(studio.collect_session(sess.name))
+		self.assertEqual(len(studio.get_session(sess.name)["runs"]), 1)
+		self.assertEqual(FakeLocalTool.jobs, {})
+
+	def test_discarding_a_session_stops_what_it_has_on_the_mac(self):
+		FakeLocalTool.finished = False
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertEqual(len(FakeLocalTool.jobs), 1)
+		studio.discard(sess.name)
+		self.assertEqual(FakeLocalTool.jobs, {})
+
+	def test_saving_stops_what_is_still_waiting_on_the_mac(self):
+		FakeLocalTool.finished = False
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		studio.finalize(sess.name, frappe.as_json({
+			"mode": "new", "item_name": unique_name(), "item_group": self.group, "price": 300, "publish": 0,
+		}))
+		self.assertEqual(FakeLocalTool.jobs, {})
+		self.assertIsNone(frappe.db.get_value(studio.SESSION, sess.name, "host_jobs"))
+		self.assertEqual(frappe.db.get_value(studio.SESSION, sess.name, "status"), "Completed")
+
+	def test_a_draft_the_page_never_showed_is_not_kept(self):
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertTrue(studio.collect_session(sess.name))
+		rows = studio._get_session(sess.name).images
+		seen = {r.name: 1 for r in rows if r.kind == "Original"}
+		studio.finalize(sess.name, frappe.as_json({
+			"selection": seen, "mode": "new", "item_name": unique_name(), "item_group": self.group, "price": 300, "publish": 0,
+		}))
+		rows = studio._get_session(sess.name).images
+		self.assertTrue(any(r.kind == "AI" for r in rows))
+		self.assertFalse(any(r.include for r in rows if r.kind in studio.GALLERY_KINDS))
+
+	def test_a_paid_run_does_not_lose_track_of_drawings_on_the_mac(self):
+		FakeLocalTool.finished = False
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		with patch.object(gemini, "edit_image", return_value=jpeg_bytes(800, 1000)):
+			out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_GEMINI)
+		self.assertEqual((out["status"], out["queued"], len(out["runs"])), ("Generating", 1, 1))
+		FakeLocalTool.finished = True
+		self.assertTrue(studio.collect_session(sess.name))
+		self.assertEqual(studio.get_session(sess.name)["status"], "Review")
+
+	def test_the_collector_lets_go_of_each_session_before_the_next(self):
+		FakeLocalTool.finished = False
+		first, second = make_session(), make_session()
+		for sess in (first, second):
+			studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		with patch.object(frappe.db, "rollback", wraps=frappe.db.rollback) as rollback:
+			studio.collect_host_jobs()
+		self.assertGreaterEqual(rollback.call_count, 2)
+
+	def test_the_garment_length_reaches_the_prompt_and_stays_on_the_session(self):
+		FakeLocalTool.finished = False
+		sess = make_session()
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL, garment_length="  floor-length   maxi ")
+		self.assertEqual(out["garment_length"], "floor-length maxi")
+		self.assertIn("Garment length: floor-length maxi.", FakeLocalTool.requests_seen[0][1]["prompt"])
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertEqual(out["garment_length"], "floor-length maxi")
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL, garment_length="")
+		self.assertIsNone(out["garment_length"])
+		self.assertNotIn("Garment length", FakeLocalTool.requests_seen[-1][1]["prompt"])
 
 	def test_unreachable_tool_comes_back_as_a_style_error(self):
 		frappe.db.set_single_value(studio.SETTINGS, "local_engine_url", "http://127.0.0.1:9")

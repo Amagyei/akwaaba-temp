@@ -11,6 +11,7 @@
   "item",
   "option_kind",
   "options_json",
+  "garment_length",
   "est_cost_usd",
   "photos_section",
   "source_image",
@@ -18,7 +19,8 @@
   "log_section",
   "generating_since",
   "last_error",
-  "host_jobs"
+  "host_jobs",
+  "host_retry_seeds"
  ],
  "fields": [
   {
@@ -61,6 +63,12 @@
    "fieldtype": "Long Text",
    "label": "Options",
    "hidden": 1
+  },
+  {
+   "fieldname": "garment_length",
+   "fieldtype": "Data",
+   "label": "Garment Length",
+   "description": "Told to the image model, because models tend to shorten long garments."
   },
   {
    "fieldname": "est_cost_usd",
@@ -110,11 +118,18 @@
    "label": "Jobs On The Image Mac",
    "read_only": 1,
    "description": "Drawings sent to the local image tool that haven't come back yet (JSON)."
+  },
+  {
+   "fieldname": "host_retry_seeds",
+   "fieldtype": "Long Text",
+   "label": "Drawings To Carry On",
+   "read_only": 1,
+   "description": "Failed or unanswered drawings, kept so a retry carries on from them (JSON)."
   }
  ],
  "image_field": "source_image",
  "links": [],
- "modified": "2026-11-04 12:00:00.000000",
+ "modified": "2026-11-04 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Akwaaba Theme",
  "name": "Akwaaba Studio Session",
