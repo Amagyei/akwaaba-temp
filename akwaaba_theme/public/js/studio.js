@@ -663,6 +663,10 @@
 			var target = $("#stu-results");
 			if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
 			if (S.errors.length) toast(S.errors.length + " style" + (S.errors.length > 1 ? "s" : "") + " failed. See below.", "error");
+			if (sess.queued) {
+				// Sent to the image Mac: it may take a while, or wait until the Mac is reachable.
+				toast(sess.queued + " sent to the image Mac. You can close this page; drafts appear under “Pick up where you left off”.");
+			}
 		}).catch(function (e) {
 			toast(e.message, "error");
 		}).then(function () { setBusy(null); });

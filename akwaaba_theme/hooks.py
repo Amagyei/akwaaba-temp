@@ -76,6 +76,10 @@ after_migrate = [
 before_tests = "akwaaba_theme.tests.utils.before_tests"
 
 scheduler_events = {
+	"cron": {
+		# Bring home drawings the image Mac has finished, whenever it was reachable.
+		"* * * * *": ["akwaaba_theme.studio.api.collect_host_jobs"],
+	},
 	"daily": ["akwaaba_theme.api.retry_unsettled_orders"],
 	"weekly": ["akwaaba_theme.studio.api.cleanup_completed_sessions"],
 }

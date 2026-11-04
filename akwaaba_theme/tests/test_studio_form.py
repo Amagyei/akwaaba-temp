@@ -99,17 +99,39 @@ class TestGenerate(FormTestCase):
 
 
 class FakeLocalTool(http.server.BaseHTTPRequestHandler):
+	"""The image Mac's job API: POST /jobs, GET /jobs/<id>[/result], DELETE /jobs/<id>."""
+
 	requests_seen = []
+	jobs = {}
+	finished = True  # flip to False to play a Mac that is still drawing
+
+	def _send(self, status, payload):
+		body = json.dumps(payload).encode()
+		self.send_response(status)
+		self.send_header("Content-Type", "application/json")
+		self.send_header("Content-Length", str(len(body)))
+		self.end_headers()
+		self.wfile.write(body)
 
 	def do_POST(self):
 		body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
 		FakeLocalTool.requests_seen.append((self.path, body))
-		payload = json.dumps({"images": [base64.b64encode(jpeg_bytes(400, 500)).decode()]}).encode()
-		self.send_response(200)
-		self.send_header("Content-Type", "application/json")
-		self.send_header("Content-Length", str(len(payload)))
-		self.end_headers()
-		self.wfile.write(payload)
+		job_id = f"job{len(FakeLocalTool.jobs) + 1}"
+		FakeLocalTool.jobs[job_id] = body
+		self._send(202, {"job_id": job_id, "status": "queued"})
+
+	def do_GET(self):
+		parts = self.path.strip("/").split("/")
+		if parts[1] not in FakeLocalTool.jobs:
+			return self._send(404, {"error": "No such job."})
+		if len(parts) == 3:
+			image = base64.b64encode(jpeg_bytes(400, 500)).decode()
+			return self._send(200, {"images": [image]})
+		self._send(200, {"status": "done" if FakeLocalTool.finished else "running"})
+
+	def do_DELETE(self):
+		FakeLocalTool.jobs.pop(self.path.strip("/").split("/")[1], None)
+		self._send(200, {"removed": True})
 
 	def log_message(self, *args):
 		pass
@@ -130,19 +152,65 @@ class TestLocalEngine(FormTestCase):
 		frappe.db.commit()
 		self.addCleanup(lambda: (frappe.db.set_single_value(studio.SETTINGS, "local_engine_url", ""), frappe.db.commit()))
 
-	def test_local_run_is_free_sliced_and_sends_the_photo(self):
+	def setUp(self):
+		super().setUp()
 		FakeLocalTool.requests_seen.clear()
+		FakeLocalTool.jobs.clear()
+		FakeLocalTool.finished = True
+
+	def test_local_run_is_queued_then_collected_as_a_free_sliced_draft(self):
 		sess = make_session()
 		with patch.object(gemini, "edit_image") as paid:
 			out = studio.generate(sess.name, [story_prompt()], model=ABENA, arc=ARC_1, engine=studio.ENGINE_LOCAL)
 		paid.assert_not_called()
-		self.assertEqual(out["errors"], [])
-		self.assertEqual(len(out["runs"][0]["panels"]), 4)
-		self.assertEqual(out["est_cost"], 0)
+		# Handed over, not waited for.
+		self.assertEqual((out["status"], out["busy"], out["queued"], out["runs"]), ("Generating", True, 1, []))
 		path, body = FakeLocalTool.requests_seen[0]
-		self.assertEqual(path, "/sdapi/v1/img2img")
+		self.assertEqual(path, "/jobs")
 		self.assertTrue(body["init_images"][0])
 		self.assertIn("named Abena", body["prompt"])
+
+		self.assertTrue(studio.collect_session(sess.name))
+		out = studio.get_session(sess.name)
+		self.assertEqual((out["status"], out["busy"], out["queued"]), ("Review", False, 0))
+		self.assertEqual(len(out["runs"][0]["panels"]), 4)
+		self.assertEqual(out["est_cost"], 0)
+		self.assertEqual(FakeLocalTool.jobs, {})  # the Mac was told it can let go
+
+	def test_nothing_is_collected_while_the_mac_is_still_drawing(self):
+		FakeLocalTool.finished = False
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertFalse(studio.collect_session(sess.name))
+		out = studio.get_session(sess.name)
+		self.assertEqual((out["status"], out["busy"], out["queued"]), ("Generating", True, 1))
+
+	def test_an_unreachable_mac_keeps_the_job_for_later(self):
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		frappe.db.set_single_value(studio.SETTINGS, "local_engine_url", "http://127.0.0.1:9")
+		self.assertFalse(studio.collect_session(sess.name))
+		self.assertEqual(studio.get_session(sess.name)["queued"], 1)
+		frappe.db.set_single_value(studio.SETTINGS, "local_engine_url", self.url)  # back in reach
+		self.assertTrue(studio.collect_session(sess.name))
+		self.assertEqual(studio.get_session(sess.name)["status"], "Review")
+
+	def test_a_job_the_mac_lost_is_reported_not_waited_for_forever(self):
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		FakeLocalTool.jobs.clear()
+		studio.collect_session(sess.name)
+		out = studio.get_session(sess.name)
+		self.assertEqual((out["busy"], out["queued"], out["status"]), (False, 0, "Draft"))
+		self.assertIn("no longer has this job", out["last_error"])
+
+	def test_the_same_style_tapped_twice_is_sent_once(self):
+		FakeLocalTool.finished = False
+		sess = make_session()
+		studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
+		self.assertEqual(out["queued"], 1)
+		self.assertEqual(len(FakeLocalTool.requests_seen), 1)
 
 	def test_unreachable_tool_comes_back_as_a_style_error(self):
 		frappe.db.set_single_value(studio.SETTINGS, "local_engine_url", "http://127.0.0.1:9")
@@ -150,6 +218,7 @@ class TestLocalEngine(FormTestCase):
 		sess = make_session()
 		out = studio.generate(sess.name, [self.prompt], engine=studio.ENGINE_LOCAL)
 		self.assertIn("Couldn't reach", out["errors"][0]["error"])
+		self.assertEqual(out["queued"], 0)
 
 	def test_form_offers_local_only_when_a_url_is_set(self):
 		keys = [e["key"] for e in studio.bootstrap()["engines"]]

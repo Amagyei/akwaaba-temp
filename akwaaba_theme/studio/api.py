@@ -5,7 +5,8 @@ Flow:
 	set_options(session, …)        optional sizes or colours; photos carry the label
 	generate(session, prompts, …)  one image call per chosen prompt, in parallel,
 	                               with Gemini or a local tool; each output is sliced
-	                               into its grid panels
+	                               into its grid panels. The local tool is queued
+	                               instead: see "Jobs on the image Mac" below.
 	add_photos / remove_rows       optional supporting photos, drop bad runs
 	finalize(session, data)        new item, or add to an existing one
 
@@ -15,6 +16,8 @@ mid-way — or an AI call already paid for — is thrown away.
 """
 
 import io
+import json
+import random
 from concurrent.futures import ThreadPoolExecutor
 
 import frappe
@@ -106,7 +109,15 @@ def bootstrap():
 @frappe.whitelist()
 def get_session(session):
 	require_studio_user()
-	return _payload(_get_session(session))
+	sess = _get_session(session)
+	if sess.status == "Generating" and sess.host_jobs:
+		# Opening the page is a good moment to look: finished drawings turn up as drafts at once.
+		try:
+			collect_session(session)
+			sess = _get_session(session)
+		except Exception:
+			frappe.log_error(title=f"Studio: couldn't collect images for {session}")
+	return _payload(sess)
 
 
 @frappe.whitelist()
@@ -238,8 +249,9 @@ def generate(session, prompts, model=None, arc=None, engine=None, option_label=N
 	if not names:
 		frappe.throw("Pick at least one style.")
 	# Lock the row: a double-tap must not pass this check twice and pay twice.
-	current = frappe.db.get_value(SESSION, sess.name, ["status", "generating_since"], as_dict=True, for_update=True)
-	if current.status == "Generating" and not _is_stale(current):
+	current = frappe.db.get_value(SESSION, sess.name, ["status", "generating_since", "host_jobs"], as_dict=True, for_update=True)
+	# Drawings queued on the image Mac don't block more: they're waiting in line, not running here.
+	if current.status == "Generating" and not _is_stale(current) and not current.host_jobs:
 		frappe.throw("Still working on the last request — hang on a moment.")
 
 	s = _settings()
@@ -267,6 +279,8 @@ def generate(session, prompts, model=None, arc=None, engine=None, option_label=N
 			"label": f"{person.name} · {story.name}" if cint(p.uses_model_arc) else None,
 		})
 	source = _file_bytes(sess, _source_for(sess, option_label))
+	if engine == ENGINE_LOCAL:
+		return _queue_on_host(sess, jobs, source, local_url, option_label)
 
 	# Make "Generating" visible to other requests (the phone may poll if the
 	# connection drops while we wait on Gemini).
@@ -334,6 +348,141 @@ def generate(session, prompts, model=None, arc=None, engine=None, option_label=N
 	out = _payload(sess)
 	out["errors"] = errors
 	return out
+
+
+# ---------------------------------------------------------------------------
+# Jobs on the image Mac
+#
+# A local drawing can take minutes, and the image Mac may be asleep, busy or out of
+# reach. So generate() only hands the photo over and returns; the Mac keeps the job
+# on disk and draws whenever it can. Finished drawings are fetched by collect_session
+# (every minute, and whenever the session is opened) and land as ordinary rows that
+# the review page shows with "include" ticked or not: nothing is final until finalize.
+# ---------------------------------------------------------------------------
+
+def _host_jobs(sess):
+	try:
+		return list(json.loads(sess.host_jobs)) if sess.host_jobs else []
+	except ValueError:
+		return []
+
+
+def _queue_on_host(sess, jobs, source, url, option_label):
+	waiting = _host_jobs(sess)
+	queued, errors = [], []
+	for job in jobs:
+		p = job["prompt"]
+		# A double tap shouldn't draw the same style twice.
+		if any(w["prompt"] == p.name and (w.get("option_label") or None) == (option_label or None) for w in waiting + queued):
+			continue
+		try:
+			job_id = local_engine.submit_job(
+				url=url,
+				prompt=job["text"],
+				image_bytes=source,
+				aspect_ratio=p.aspect_ratio or "3:4",
+				image_size=job["size"],
+				seed=random.randrange(2**31),  # a redo should look different, not the same again
+			)
+		except gemini.GeminiError as e:
+			errors.append({"prompt": p.name, "title": p.title, "error": str(e)})
+			continue
+		queued.append({
+			"job_id": job_id, "prompt": p.name, "label": job["label"],
+			"option_label": option_label or None, "sent": str(now_datetime()),
+		})
+
+	if queued:
+		sess.host_jobs = json.dumps(waiting + queued)
+		sess.status = "Generating"
+		sess.generating_since = now_datetime()
+	if errors:
+		sess.last_error = "\n".join(f"{e['title']}: {e['error']}" for e in errors)
+	sess.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	out = _payload(sess)
+	out["errors"] = errors
+	return out
+
+
+def collect_session(name):
+	"""Fetch what the image Mac has finished for this session. Returns True if anything changed.
+
+	An unreachable Mac is not an error: whatever is still out there stays on the list
+	and is asked for again next time.
+	"""
+	url = (_settings().local_engine_url or "").strip()
+	if not url or not frappe.db.exists(SESSION, name):
+		return False
+	frappe.db.get_value(SESSION, name, "name", for_update=True)  # one collector at a time
+	sess = frappe.get_doc(SESSION, name)
+	waiting = _host_jobs(sess)
+	if not waiting:
+		return False
+
+	remaining, errors, collected = [], [], []
+	run_no = max([cint(r.run) for r in sess.images] or [0])
+	offline = False
+	for j in waiting:
+		if offline:
+			remaining.append(j)
+			continue
+		title = frappe.db.get_value(PROMPT, j["prompt"], "title") or j["prompt"]
+		try:
+			state = local_engine.job_status(url=url, job_id=j["job_id"])
+		except local_engine.Unreachable:
+			offline = True
+			remaining.append(j)
+			continue
+		except gemini.GeminiError:
+			remaining.append(j)  # an odd answer: ask again later
+			continue
+
+		status = state.get("status")
+		if status in ("queued", "running"):
+			remaining.append(j)
+		elif status == "done":
+			try:
+				data = local_engine.job_result(url=url, job_id=j["job_id"])
+				run_no += 1
+				_store_run(sess, frappe.get_doc(PROMPT, j["prompt"]), run_no, data, j.get("label"), j.get("option_label"))
+				collected.append(j)
+			except local_engine.Unreachable:
+				offline = True
+				remaining.append(j)
+			except Exception as e:  # noqa: BLE001 — shown on the page, logged below
+				frappe.log_error(title=f"Studio: couldn't store {j['prompt']} for {name}")
+				errors.append(f"{title}: Couldn't process the image: {e}")
+				collected.append(j)
+		else:  # failed, or the Mac no longer knows the job
+			errors.append(f"{title}: {state.get('error') or 'The image Mac lost this job.'}")
+			collected.append(j)
+
+	if len(remaining) == len(waiting):
+		return False
+
+	sess.host_jobs = json.dumps(remaining) if remaining else None
+	if errors:
+		sess.last_error = "\n".join(errors)
+	if not remaining:
+		sess.generating_since = None
+		sess.status = "Review" if any(r.kind in GALLERY_KINDS for r in sess.images) else "Draft"
+	sess.save(ignore_permissions=True)
+	frappe.db.commit()
+	for j in collected:  # only now that the drafts are saved here is the Mac's copy not needed
+		local_engine.acknowledge_job(url=url, job_id=j["job_id"])
+	return True
+
+
+def collect_host_jobs():
+	"""Scheduler: bring home whatever the image Mac has finished, for every waiting session."""
+	for name in frappe.get_all(SESSION, filters={"status": "Generating", "host_jobs": ["is", "set"]}, pluck="name"):
+		try:
+			collect_session(name)
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"Studio: couldn't collect images for {name}")
 
 
 def _store_run(sess, prompt, run_no, data, run_label=None, option_label=None):
@@ -672,7 +821,8 @@ def _payload(sess):
 		"name": sess.name,
 		"title": sess.title,
 		"status": sess.status,
-		"busy": sess.status == "Generating" and not _is_stale(sess),
+		"busy": sess.status == "Generating" and (bool(sess.host_jobs) or not _is_stale(sess)),
+		"queued": len(_host_jobs(sess)),
 		"item": sess.item,
 		"est_cost": flt(sess.est_cost_usd, 4),
 		"source": sess.source_image,

@@ -17,7 +17,8 @@
   "images",
   "log_section",
   "generating_since",
-  "last_error"
+  "last_error",
+  "host_jobs"
  ],
  "fields": [
   {
@@ -102,11 +103,18 @@
    "fieldtype": "Long Text",
    "label": "Last Error",
    "read_only": 1
+  },
+  {
+   "fieldname": "host_jobs",
+   "fieldtype": "Long Text",
+   "label": "Jobs On The Image Mac",
+   "read_only": 1,
+   "description": "Drawings sent to the local image tool that haven't come back yet (JSON)."
   }
  ],
  "image_field": "source_image",
  "links": [],
- "modified": "2026-10-24 12:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Akwaaba Theme",
  "name": "Akwaaba Studio Session",
